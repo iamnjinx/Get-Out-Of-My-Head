@@ -10,10 +10,14 @@
 #include "EnhancedInputComponent.h"
 #include "EnhancedInputSubsystems.h"
 #include "InputActionValue.h"
+#include "Net/UnrealNetwork.h"
 #include "Get_Out_Of_My_Head.h"
 
 AGet_Out_Of_My_HeadCharacter::AGet_Out_Of_My_HeadCharacter()
 {
+	// view rotation is updated and smoothed every frame
+	PrimaryActorTick.bCanEverTick = true;
+
 	// Set size for collision capsule
 	GetCapsuleComponent()->InitCapsuleSize(42.f, 96.0f);
 		
@@ -48,6 +52,43 @@ AGet_Out_Of_My_HeadCharacter::AGet_Out_Of_My_HeadCharacter()
 
 	// Note: The skeletal mesh and anim blueprint references on the Mesh component (inherited from Character) 
 	// are set in the derived blueprint asset named ThirdPersonCharacter (to avoid direct content references in C++)
+}
+
+void AGet_Out_Of_My_HeadCharacter::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
+{
+	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
+
+	// the owner already has its own control rotation
+	DOREPLIFETIME_CONDITION(AGet_Out_Of_My_HeadCharacter, ReplicatedViewRotation, COND_SkipOwner);
+}
+
+void AGet_Out_Of_My_HeadCharacter::Tick(float DeltaSeconds)
+{
+	Super::Tick(DeltaSeconds);
+
+	// the server knows the controller's rotation, local or remote
+	if (HasAuthority() && Controller)
+	{
+		ReplicatedViewRotation = Controller->GetControlRotation();
+	}
+
+	SmoothedViewRotation = FMath::RInterpTo(SmoothedViewRotation, ReplicatedViewRotation, DeltaSeconds, ViewRotationInterpSpeed);
+}
+
+FRotator AGet_Out_Of_My_HeadCharacter::GetViewRotation() const
+{
+	if (IsLocallyControlled())
+	{
+		return Super::GetViewRotation();
+	}
+
+	return SmoothedViewRotation;
+}
+
+void AGet_Out_Of_My_HeadCharacter::SetReplicatedViewRotation(const FRotator& NewRotation)
+{
+	ReplicatedViewRotation = NewRotation;
+	SmoothedViewRotation = NewRotation;
 }
 
 void AGet_Out_Of_My_HeadCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)

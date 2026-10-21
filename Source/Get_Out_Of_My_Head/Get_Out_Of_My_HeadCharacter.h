@@ -49,10 +49,34 @@ protected:
 	UPROPERTY(EditAnywhere, Category="Input")
 	UInputAction* MouseLookAction;
 
+	/** Controller's view rotation, replicated to everyone watching the body */
+	UPROPERTY(Replicated)
+	FRotator ReplicatedViewRotation;
+
+	/** ReplicatedViewRotation smoothed between net updates */
+	FRotator SmoothedViewRotation;
+
+	/** How fast watchers follow the replicated view rotation */
+	UPROPERTY(EditAnywhere, Category="Camera")
+	float ViewRotationInterpSpeed = 15.0f;
+
 public:
 
 	/** Constructor */
-	AGet_Out_Of_My_HeadCharacter();	
+	AGet_Out_Of_My_HeadCharacter();
+
+	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
+
+	virtual void Tick(float DeltaSeconds) override;
+
+	/** Watchers see through the controller's eyes, the controller uses its own control rotation */
+	virtual FRotator GetViewRotation() const override;
+
+	/** Returns the last view rotation of whoever controlled the body */
+	FRotator GetReplicatedViewRotation() const { return ReplicatedViewRotation; }
+
+	/** Server: sets the view rotation, e.g. when the body is reset */
+	void SetReplicatedViewRotation(const FRotator& NewRotation);
 
 protected:
 

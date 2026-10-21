@@ -18,13 +18,16 @@ public class Get_Out_Of_My_Head : ModuleRules
 			"StateTreeModule",
 			"GameplayStateTreeModule",
 			"UMG",
-			"Slate"
+			"Slate",
+			"SlateCore",
+			"EngineSettings"
 		});
 
 		PrivateDependencyModuleNames.AddRange(new string[] { });
 
 		PublicIncludePaths.AddRange(new string[] {
 			"Get_Out_Of_My_Head",
+			"Get_Out_Of_My_Head/Head",
 			"Get_Out_Of_My_Head/Variant_Platforming",
 			"Get_Out_Of_My_Head/Variant_Platforming/Animation",
 			"Get_Out_Of_My_Head/Variant_Combat",
