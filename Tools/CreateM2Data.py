@@ -17,6 +17,9 @@ CUBE = unreal.load_asset("/Engine/BasicShapes/Cube.Cube")
 CYLINDER = unreal.load_asset("/Engine/BasicShapes/Cylinder.Cylinder")
 SPHERE = unreal.load_asset("/Engine/BasicShapes/Sphere.Sphere")
 
+# placeholder until M7 sounds
+TEST_SOUND = unreal.load_asset("/Engine/EngineSounds/1kSineTonePing")
+
 
 def text(value):
     return unreal.Text(value)
@@ -98,6 +101,10 @@ def remove_status(status_asset):
     return set_props(unreal.HeadEffect(), type=unreal.HeadEffectType.REMOVE_STATUS, status=status_asset)
 
 
+def play_sound(description, sound=None):
+    return set_props(unreal.HeadEffect(), type=unreal.HeadEffectType.SOUND, sound_text=text(description), sound=sound)
+
+
 def add_variable(variable, delta):
     return set_props(unreal.HeadEffect(), type=unreal.HeadEffectType.ADD_VARIABLE, variable=variable, delta=delta)
 
@@ -175,13 +182,17 @@ DESK = obj("DA_Obj_Desk", "책상", CUBE, (0.8, 1.4, 0.75), (0.55, 0.4, 0.3),
                    condition(unreal.HeadConditionType.ATTACHED, "바구니에 수건이 없다", target=unreal.HeadConditionTarget.ITEM, object=TOWEL)]),
            ])
 
+DOLL_A = obj("DA_Obj_DollA", "인형A", CYLINDER, (0.15, 0.15, 0.3), (0.95, 0.6, 0.7),
+             mode=INSTANT, carryable=True,
+             effects=[play_sound("Darling I Love You", TEST_SOUND)])
+
 # --- rule set ---------------------------------------------------------------
 
-TEST_LAYOUT = [SHAMPOO_OBJ, SHOWER, TOWEL, TOOTHBRUSH, APPLE, EGG, BASKET, THERMO_UP, THERMO_DOWN, BEDROOM_LIGHT, BASEMENT_KEY]
+TEST_LAYOUT = [SHAMPOO_OBJ, SHOWER, TOWEL, TOOTHBRUSH, APPLE, EGG, BASKET, THERMO_UP, THERMO_DOWN, BEDROOM_LIGHT, BASEMENT_KEY, DOLL_A]
 
 placements = []
 for index, asset in enumerate(TEST_LAYOUT):
-    offset = unreal.Vector(250.0, -600.0 + index * 120.0, 0.0)
+    offset = unreal.Vector(250.0, -660.0 + index * 120.0, 0.0)
     placements.append(set_props(unreal.HeadObjectPlacement(), object=asset, offset=offset))
 
 # large pieces stand in a second row so they do not block the small objects

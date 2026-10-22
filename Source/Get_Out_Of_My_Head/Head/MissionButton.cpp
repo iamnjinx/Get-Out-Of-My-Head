@@ -5,6 +5,7 @@
 #include "Engine/World.h"
 #include "GameFramework/PlayerController.h"
 #include "Camera/PlayerCameraManager.h"
+#include "HeadInteraction.h"
 #include "Materials/MaterialInstanceDynamic.h"
 #include "Net/UnrealNetwork.h"
 #include "TimerManager.h"
@@ -61,14 +62,12 @@ void AMissionButton::Tick(float DeltaSeconds)
 {
 	Super::Tick(DeltaSeconds);
 
-	// face the local camera so the letter is always readable
-	if (APlayerController* PC = GetWorld()->GetFirstPlayerController())
+	// face whatever looks at it on this machine so the letter is always readable
+	FVector Viewer;
+	if (HeadInteraction::GetLocalViewerLocation(GetWorld(), Viewer))
 	{
-		if (PC->PlayerCameraManager)
-		{
-			const FVector ToCamera = PC->PlayerCameraManager->GetCameraLocation() - Label->GetComponentLocation();
-			Label->SetWorldRotation(FRotator(0.0f, ToCamera.Rotation().Yaw, 0.0f));
-		}
+		const FVector ToViewer = Viewer - Label->GetComponentLocation();
+		Label->SetWorldRotation(FRotator(0.0f, ToViewer.Rotation().Yaw, 0.0f));
 	}
 }
 

@@ -3,6 +3,7 @@
 #include "Get_Out_Of_My_HeadCharacter.h"
 #include "Engine/LocalPlayer.h"
 #include "Camera/CameraComponent.h"
+#include "Components/SceneCaptureComponent2D.h"
 #include "Components/CapsuleComponent.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "GameFramework/SpringArmComponent.h"
@@ -51,6 +52,21 @@ AGet_Out_Of_My_HeadCharacter::AGet_Out_Of_My_HeadCharacter()
 	FollowCamera->SetupAttachment(CameraBoom, USpringArmComponent::SocketName);
 	FollowCamera->bUsePawnControlRotation = false;
 
+	// the controller's screen has a vignette, the mind room screen does not
+	FollowCamera->PostProcessSettings.bOverride_VignetteIntensity = true;
+	FollowCamera->PostProcessSettings.VignetteIntensity = 1.0f;
+
+	// head view for the mind room screen, off until a machine in the mind room turns it on
+	HeadCapture = CreateDefaultSubobject<USceneCaptureComponent2D>(TEXT("HeadCapture"));
+	HeadCapture->SetupAttachment(GetMesh(), TEXT("head"));
+	HeadCapture->SetUsingAbsoluteRotation(true);
+	HeadCapture->bCaptureEveryFrame = false;
+	HeadCapture->bCaptureOnMovement = false;
+	HeadCapture->CaptureSource = ESceneCaptureSource::SCS_FinalColorLDR;
+	HeadCapture->FOVAngle = 90.0f;
+	HeadCapture->PostProcessSettings.bOverride_VignetteIntensity = true;
+	HeadCapture->PostProcessSettings.VignetteIntensity = 0.0f;
+
 	// statuses, hand and falling of the shared body
 	CreateDefaultSubobject<UHeadBodyComponent>(TEXT("HeadBody"));
 
@@ -77,6 +93,9 @@ void AGet_Out_Of_My_HeadCharacter::Tick(float DeltaSeconds)
 	}
 
 	SmoothedViewRotation = FMath::RInterpTo(SmoothedViewRotation, ReplicatedViewRotation, DeltaSeconds, ViewRotationInterpSpeed);
+
+	// the head looks where the controller looks (the audio listener sits here too)
+	HeadCapture->SetWorldRotation(GetViewRotation());
 }
 
 FRotator AGet_Out_Of_My_HeadCharacter::GetViewRotation() const
@@ -93,6 +112,14 @@ void AGet_Out_Of_My_HeadCharacter::SetReplicatedViewRotation(const FRotator& New
 {
 	ReplicatedViewRotation = NewRotation;
 	SmoothedViewRotation = NewRotation;
+}
+
+void AGet_Out_Of_My_HeadCharacter::BeginPlay()
+{
+	Super::BeginPlay();
+
+	// the head would fill the view from inside
+	HeadCapture->HiddenActors.Add(this);
 }
 
 void AGet_Out_Of_My_HeadCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)

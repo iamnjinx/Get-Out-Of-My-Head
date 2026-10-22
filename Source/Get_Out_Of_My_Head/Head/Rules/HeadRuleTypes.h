@@ -7,6 +7,7 @@ class UHeadStatusData;
 class UHeadObjectData;
 class UHeadMissionData;
 class UHeadWorldVariableData;
+class USoundBase;
 
 /** How an interaction (or an attach) runs */
 UENUM(BlueprintType)
@@ -90,7 +91,7 @@ enum class EHeadEffectType : uint8
 	/** Remove Status from the body */
 	RemoveStatus,
 
-	/** Play a sound heard at the body (M2: logged as a notice) */
+	/** Play a sound heard at the body's position by everyone (also logged as a notice) */
 	Sound,
 
 	/** Add Delta to a world variable */
@@ -162,6 +163,10 @@ struct FHeadEffect
 	/** What the sound is, for Sound */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Effect")
 	FText SoundText;
+
+	/** Sound asset for Sound. Empty: only the notice */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Effect")
+	TObjectPtr<USoundBase> Sound;
 };
 
 /** An item a host accepts, with its own mode, conditions and effects */

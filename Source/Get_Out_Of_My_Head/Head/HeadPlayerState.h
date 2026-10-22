@@ -31,6 +31,20 @@ class AHeadPlayerState : public APlayerState
 	UPROPERTY(Replicated)
 	TObjectPtr<UHeadMissionData> RevealedMission;
 
+	/** Staged missions: current stage (0-based) and stage count, owner only. 0 stages for condition missions */
+	UPROPERTY(Replicated)
+	int32 MissionStage = 0;
+
+	UPROPERTY(Replicated)
+	int32 MissionStageCount = 0;
+
+	/** Seconds held / needed for the current stage, owner only */
+	UPROPERTY(Replicated)
+	float StageHeldSeconds = 0.0f;
+
+	UPROPERTY(Replicated)
+	float StageRequiredSeconds = 0.0f;
+
 public:
 
 	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
@@ -54,4 +68,12 @@ public:
 	UHeadMissionData* GetMission() const { return Mission; }
 
 	UHeadMissionData* GetRevealedMission() const { return RevealedMission; }
+
+	/** Server: progress of a staged mission */
+	void SetStageProgress(int32 Stage, int32 StageCount, float HeldSeconds, float RequiredSeconds);
+
+	int32 GetMissionStage() const { return MissionStage; }
+	int32 GetMissionStageCount() const { return MissionStageCount; }
+	float GetStageHeldSeconds() const { return StageHeldSeconds; }
+	float GetStageRequiredSeconds() const { return StageRequiredSeconds; }
 };

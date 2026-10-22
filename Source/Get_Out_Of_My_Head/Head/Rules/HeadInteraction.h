@@ -27,6 +27,12 @@ namespace HeadInteraction
 	/** Object under the screen-center crosshair, or null */
 	AHeadObject* FindAimTarget(const APlayerController* PC, const ACharacter* Body, float Range);
 
+	/**
+	 *  Where this machine looks at the house from: the controller's camera,
+	 *  or the body's head capture for players in the mind room. False on a dedicated server
+	 */
+	bool GetLocalViewerLocation(const UWorld* World, FVector& OutLocation);
+
 	/** Point on the floor below Location, ignoring every object */
 	FVector FindFloor(const UWorld* World, const FVector& Location, const AActor* Ignore = nullptr);
 }

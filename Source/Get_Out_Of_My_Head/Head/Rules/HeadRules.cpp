@@ -172,9 +172,15 @@ void HeadRules::ApplyEffects(const FHeadRuleContext& Context, const TArray<FHead
 			break;
 
 		case EHeadEffectType::Sound:
-			// the prototype only logs sounds, everyone hears them at the body
+			// world sound: plays where it happens, everyone's listener sits in the body's head
 			if (Context.GameState)
 			{
+				if (Effect.Sound)
+				{
+					const FVector Location = Context.Self ? Context.Self->GetActorLocation() : (Context.Body ? Context.Body->GetActorLocation() : FVector::ZeroVector);
+					Context.GameState->MulticastPlaySound(Effect.Sound, Location);
+				}
+
 				Context.GameState->MulticastNotice(FString::Printf(TEXT("소리: \"%s\""), *Effect.SoundText.ToString()));
 			}
 			break;

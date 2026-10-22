@@ -8,6 +8,8 @@
 #include "HeadRules.h"
 #include "HeadBodyComponent.h"
 #include "HeadInteraction.h"
+#include "HeadMindRoom.h"
+#include "HeadAvatar.h"
 #include "Get_Out_Of_My_HeadCharacter.h"
 #include "Get_Out_Of_My_Head.h"
 #include "GameFramework/CharacterMovementComponent.h"
@@ -24,8 +26,9 @@ AHeadGameMode::AHeadGameMode()
 	PlayerStateClass = AHeadPlayerState::StaticClass();
 	PlayerControllerClass = AHeadPlayerController::StaticClass();
 
-	// players only ever control the shared body
+	// players control the shared body or their mind room avatar, spawned by hand
 	DefaultPawnClass = nullptr;
+	AvatarClass = AHeadAvatar::StaticClass();
 
 	MissionButtonClass = AMissionButton::StaticClass();
 
@@ -52,10 +55,17 @@ void AHeadGameMode::StartPlay()
 		UE_LOG(LogGet_Out_Of_My_Head, Warning, TEXT("AHeadGameMode could not load the rule set %s. No objects, variables or missions."), *RuleSetAsset.ToString());
 	}
 
+	SpawnMindRoom();
 	SpawnBody();
 	SpawnMissionButtons();
 	SpawnObjects();
 	ResetWorld();
+
+	// the host logged in before StartPlay
+	for (FConstPlayerControllerIterator It = GetWorld()->GetPlayerControllerIterator(); It; ++It)
+	{
+		SpawnAvatar(It->Get());
+	}
 
 	if (UHeadBodyComponent* BodyComponent = Body ? Body->FindComponentByClass<UHeadBodyComponent>() : nullptr)
 	{
@@ -153,6 +163,15 @@ void AHeadGameMode::Logout(AController* Exiting)
 				RemoveFromTurnOrder(PS);
 			}
 		}
+
+		if (APlayerController* PC = Cast<APlayerController>(Exiting))
+		{
+			TObjectPtr<AHeadAvatar> Avatar;
+			if (Avatars.RemoveAndCopyValue(PC, Avatar) && Avatar)
+			{
+				Avatar->Destroy();
+			}
+		}
 	}
 
 	Super::Logout(Exiting);
@@ -160,7 +179,11 @@ void AHeadGameMode::Logout(AController* Exiting)
 
 void AHeadGameMode::HandleStartingNewPlayer_Implementation(APlayerController* NewPlayer)
 {
-	// no RestartPlayer: nobody gets a pawn of their own, the controller watches the body
+	// no RestartPlayer: players arrive in the mind room as their avatar
+	if (MindRoom)
+	{
+		SpawnAvatar(NewPlayer);
+	}
 }
 
 void AHeadGameMode::HandleHostAction(AHeadPlayerController* PC)
@@ -405,6 +428,53 @@ double AHeadGameMode::Now() const
 	return GetHeadGameState()->GetServerWorldTimeSeconds();
 }
 
+void AHeadGameMode::SpawnMindRoom()
+{
+	FActorSpawnParameters SpawnParams;
+	SpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+
+	MindRoom = GetWorld()->SpawnActor<AHeadMindRoom>(AHeadMindRoom::StaticClass(), FTransform(MindRoomLocation), SpawnParams);
+}
+
+void AHeadGameMode::SpawnAvatar(APlayerController* PC)
+{
+	if (!PC || !MindRoom || !AvatarClass || Avatars.Contains(PC))
+	{
+		return;
+	}
+
+	FActorSpawnParameters SpawnParams;
+	SpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AdjustIfPossibleButAlwaysSpawn;
+
+	const int32 ColorIndex = NextAvatarColor++;
+	AHeadAvatar* Avatar = GetWorld()->SpawnActor<AHeadAvatar>(AvatarClass, MindRoom->GetAvatarSpawnTransform(ColorIndex), SpawnParams);
+	if (!Avatar)
+	{
+		return;
+	}
+
+	Avatar->InitAvatar(PC->PlayerState, ColorIndex);
+	Avatars.Add(PC, Avatar);
+
+	PC->Possess(Avatar);
+	PC->ClientSetRotation(Avatar->GetActorRotation());
+}
+
+void AHeadGameMode::ReturnToAvatar(AController* Controller)
+{
+	APlayerController* PC = Cast<APlayerController>(Controller);
+	AHeadAvatar* Avatar = PC ? Avatars.FindRef(PC) : nullptr;
+	if (!Avatar)
+	{
+		return;
+	}
+
+	// back where the avatar was left
+	Avatar->SetAway(false);
+	PC->Possess(Avatar);
+	PC->ClientSetRotation(Avatar->GetActorRotation());
+}
+
 void AHeadGameMode::SpawnBody()
 {
 	BodyStartTransform = FTransform(FVector(0.0f, 0.0f, 200.0f));
@@ -554,6 +624,12 @@ void AHeadGameMode::BeginTurn(int32 TurnIndex)
 		PC->Possess(Body);
 		PC->SetControlRotation(ViewRotation);
 		PC->ClientSetRotation(ViewRotation);
+
+		// the controller's avatar leaves the mind room
+		if (AHeadAvatar* Avatar = Avatars.FindRef(PC))
+		{
+			Avatar->SetAway(true);
+		}
 	}
 }
 
@@ -697,6 +773,7 @@ void AHeadGameMode::ReleaseBody()
 	if (AController* Controller = Body->GetController())
 	{
 		Controller->UnPossess();
+		ReturnToAvatar(Controller);
 	}
 
 	Body->StopJumping();

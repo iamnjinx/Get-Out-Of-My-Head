@@ -13,12 +13,14 @@ class AGet_Out_Of_My_HeadCharacter;
 class AHeadObject;
 class UHeadRuleSet;
 class UHeadBodyComponent;
+class AHeadMindRoom;
+class AHeadAvatar;
 struct FHeadRuleContext;
 struct FHeadAttachSlot;
 
 /**
- *  Server-side round flow (M1) and object interaction (M2)
- *  One shared body is possessed by the next player every turn.
+ *  Server-side round flow (M1), object interaction (M2) and the mind room (M3)
+ *  One shared body is possessed by the next player every turn, everyone else controls their avatar in the mind room.
  *  Lobby -> Playing <-> Handover -> Results -> Lobby
  *  In standalone (front end) it does nothing and the controller shows the menu instead.
  */
@@ -32,6 +34,14 @@ protected:
 	/** Class of the shared body */
 	UPROPERTY(EditDefaultsOnly, Category="Head|Body")
 	TSubclassOf<AGet_Out_Of_My_HeadCharacter> BodyClass;
+
+	/** Class of the mind room avatars */
+	UPROPERTY(EditDefaultsOnly, Category="Head|MindRoom")
+	TSubclassOf<AHeadAvatar> AvatarClass;
+
+	/** Where the mind room is built, away from the house */
+	UPROPERTY(EditDefaultsOnly, Config, Category="Head|MindRoom")
+	FVector MindRoomLocation = FVector(0.0f, 0.0f, -3000.0f);
 
 	/** Class of the dummy mission buttons */
 	UPROPERTY(EditDefaultsOnly, Category="Head|Mission")
@@ -83,6 +93,16 @@ protected:
 
 	UPROPERTY()
 	TObjectPtr<UHeadRuleSet> RuleSet;
+
+	UPROPERTY()
+	TObjectPtr<AHeadMindRoom> MindRoom;
+
+	/** Each player's avatar */
+	UPROPERTY()
+	TMap<TObjectPtr<APlayerController>, TObjectPtr<AHeadAvatar>> Avatars;
+
+	/** Next avatar color, so colors stay put when someone leaves */
+	int32 NextAvatarColor = 0;
 
 	/** Every object in the house */
 	UPROPERTY()
@@ -152,6 +172,14 @@ protected:
 
 	/** Current server time */
 	double Now() const;
+
+	void SpawnMindRoom();
+
+	/** Gives the player an avatar in the mind room and puts them in it */
+	void SpawnAvatar(APlayerController* PC);
+
+	/** Puts a player who stopped controlling the body back into their avatar */
+	void ReturnToAvatar(AController* Controller);
 
 	void SpawnBody();
 	void SpawnMissionButtons();

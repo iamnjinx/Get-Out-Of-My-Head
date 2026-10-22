@@ -9,6 +9,8 @@ class UInputMappingContext;
 class AHeadGameState;
 class AHeadPlayerState;
 class AHeadObject;
+class AHeadMindRoom;
+class USoundBase;
 class UHeadBodyComponent;
 class SWidget;
 
@@ -56,6 +58,12 @@ class AHeadPlayerController : public AGet_Out_Of_My_HeadPlayerController
 	/** Local: object under the crosshair while controlling the body */
 	TWeakObjectPtr<AHeadObject> AimTarget;
 
+	/** Local: the mind room whose screen this machine renders */
+	TWeakObjectPtr<AHeadMindRoom> MindRoom;
+
+	/** Local: the audio listener sits in the body's head */
+	bool bListenerOnBody = false;
+
 	/** Mappings for the actions above */
 	UPROPERTY(Transient)
 	TObjectPtr<UInputMappingContext> RoomMappingContext;
@@ -73,6 +81,13 @@ public:
 	/** Seconds a notice stays on screen */
 	UPROPERTY(EditAnywhere, Category="Head|UI")
 	float NoticeSeconds = 4.0f;
+
+	/** UI sound for messages to this player only ("조건 부족"...). Only the controller hears it */
+	UPROPERTY(EditAnywhere, Category="Head|UI")
+	TObjectPtr<USoundBase> UISound;
+
+	UPROPERTY(EditAnywhere, Category="Head|UI")
+	float UISoundVolume = 0.3f;
 
 	/** Adds a notice on this machine's screen */
 	void AddNotice(const FString& Text);
@@ -133,6 +148,9 @@ protected:
 
 	/** Finds the pointed object and moves the highlight to it */
 	void UpdateAim();
+
+	/** Renders the mind room screen while not controlling, keeps the listener in the body's head */
+	void UpdateMindRoomView();
 
 	void OnInteractPressed();
 	void OnInteractReleased();

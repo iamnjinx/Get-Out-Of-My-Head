@@ -4,6 +4,8 @@
 #include "Get_Out_Of_My_HeadCharacter.h"
 #include "HeadDataAssets.h"
 #include "Engine/World.h"
+#include "Kismet/GameplayStatics.h"
+#include "Sound/SoundBase.h"
 #include "Net/UnrealNetwork.h"
 
 void AHeadGameState::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
@@ -32,6 +34,14 @@ void AHeadGameState::MulticastNotice_Implementation(const FString& Text)
 		{
 			PC->AddNotice(Text);
 		}
+	}
+}
+
+void AHeadGameState::MulticastPlaySound_Implementation(USoundBase* Sound, FVector Location)
+{
+	if (Sound && GetNetMode() != NM_DedicatedServer)
+	{
+		UGameplayStatics::PlaySoundAtLocation(this, Sound, Location);
 	}
 }
 

@@ -9,6 +9,7 @@
 
 class USpringArmComponent;
 class UCameraComponent;
+class USceneCaptureComponent2D;
 class UInputAction;
 struct FInputActionValue;
 
@@ -30,6 +31,10 @@ class AGet_Out_Of_My_HeadCharacter : public ACharacter
 	/** Follow camera */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Components", meta = (AllowPrivateAccess = "true"))
 	UCameraComponent* FollowCamera;
+
+	/** First person view from the head, drawn on the mind room screen (each machine captures locally) */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Components", meta = (AllowPrivateAccess = "true"))
+	USceneCaptureComponent2D* HeadCapture;
 	
 protected:
 
@@ -80,6 +85,8 @@ public:
 
 protected:
 
+	virtual void BeginPlay() override;
+
 	/** Initialize input action bindings */
 	virtual void SetupPlayerInputComponent(class UInputComponent* PlayerInputComponent) override;
 
@@ -116,5 +123,8 @@ public:
 
 	/** Returns FollowCamera subobject **/
 	FORCEINLINE class UCameraComponent* GetFollowCamera() const { return FollowCamera; }
+
+	/** Returns HeadCapture subobject **/
+	FORCEINLINE class USceneCaptureComponent2D* GetHeadCapture() const { return HeadCapture; }
 };
 

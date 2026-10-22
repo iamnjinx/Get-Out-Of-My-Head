@@ -8,6 +8,7 @@
 class AHeadPlayerState;
 class AGet_Out_Of_My_HeadCharacter;
 class UHeadWorldVariableData;
+class USoundBase;
 
 /** Current value of a world variable */
 USTRUCT()
@@ -83,6 +84,10 @@ public:
 
 	/** Server: puts every variable back to its initial value */
 	void ResetVariables(const TArray<TObjectPtr<UHeadWorldVariableData>>& Variables);
+
+	/** Plays a world sound on every machine */
+	UFUNCTION(NetMulticast, Unreliable)
+	void MulticastPlaySound(USoundBase* Sound, FVector Location);
 
 	/** Shows a notice line on every client */
 	UFUNCTION(NetMulticast, Reliable)

@@ -25,9 +25,8 @@ namespace
 
 AHeadObject::AHeadObject()
 {
-	// ticks only while flying
+	// flies when thrown, turns its name tag toward the viewer
 	PrimaryActorTick.bCanEverTick = true;
-	PrimaryActorTick.bStartWithTickEnabled = false;
 
 	bReplicates = true;
 	bAlwaysRelevant = true;
@@ -43,9 +42,11 @@ AHeadObject::AHeadObject()
 
 	NameTag = CreateDefaultSubobject<UWidgetComponent>(TEXT("NameTag"));
 	NameTag->SetupAttachment(RootComponent);
-	NameTag->SetWidgetSpace(EWidgetSpace::Screen);
+	// world space so the mind room screen capture shows it too
+	NameTag->SetWidgetSpace(EWidgetSpace::World);
 	NameTag->SetWidgetClass(UHeadNameTagWidget::StaticClass());
 	NameTag->SetDrawAtDesiredSize(true);
+	NameTag->SetRelativeScale3D(FVector(0.3f));
 	NameTag->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 }
 
@@ -70,7 +71,8 @@ void AHeadObject::BeginPlay()
 
 	if (UHeadNameTagWidget* Widget = Cast<UHeadNameTagWidget>(NameTag->GetUserWidgetObject()))
 	{
-		Widget->SetOwningObject(this);
+		TWeakObjectPtr<AHeadObject> WeakThis(this);
+		Widget->SetTextSource([WeakThis]() { return WeakThis.IsValid() ? WeakThis->GetNameTagText() : FText::GetEmpty(); });
 	}
 
 	// objects placed in the level get their first state here
@@ -86,7 +88,15 @@ void AHeadObject::Tick(float DeltaSeconds)
 {
 	Super::Tick(DeltaSeconds);
 
-	if (!bFlying || FlightPath.Num() < 2)
+	// the tag faces whatever looks at it on this machine: the controller's camera or the head capture
+	FVector Viewer;
+	if (HeadInteraction::GetLocalViewerLocation(GetWorld(), Viewer))
+	{
+		const FVector ToViewer = Viewer - NameTag->GetComponentLocation();
+		NameTag->SetWorldRotation(FRotator(0.0f, ToViewer.Rotation().Yaw, 0.0f));
+	}
+
+	if (!HasAuthority() || !bFlying || FlightPath.Num() < 2)
 	{
 		return;
 	}
@@ -273,7 +283,6 @@ void AHeadObject::StartThrow(const TArray<FVector>& Path, float Duration, bool b
 	bBreakOnLanding = bBreak;
 	bFlying = true;
 
-	SetActorTickEnabled(true);
 	ApplyLook();
 }
 
@@ -442,13 +451,11 @@ void AHeadObject::DetachEverything()
 
 	bHeld = false;
 	bFlying = false;
-	SetActorTickEnabled(false);
 }
 
 void AHeadObject::Land()
 {
 	bFlying = false;
-	SetActorTickEnabled(false);
 
 	// break-on-throw objects vanish without effect (respawning ones come back)
 	if (bBreakOnLanding)

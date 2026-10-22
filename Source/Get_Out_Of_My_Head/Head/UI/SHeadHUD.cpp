@@ -231,8 +231,24 @@ FText SHeadHUD::GetPrivateText() const
 	}
 
 	// only replicated to this player
-	const FString MissionName = Me->GetMission() ? Me->GetMission()->DisplayName.ToString() : TEXT("-");
-	return FText::FromString(FString::Printf(TEXT("내 임무: %s\n(M1 테스트: 버튼 %s 누르기)"), *MissionName, *AMissionButton::GetLabel(Me->GetMissionButtonIndex())));
+	const UHeadMissionData* Mission = Me->GetMission();
+	FString Text = FString::Printf(TEXT("내 임무: %s"), Mission ? *Mission->DisplayName.ToString() : TEXT("-"));
+
+	if (Mission && !Mission->Description.IsEmpty())
+	{
+		Text += TEXT("\n") + Mission->Description.ToString();
+	}
+
+	// staged missions show their stage and hold time to the owner only
+	if (Me->GetMissionStageCount() > 0)
+	{
+		Text += FString::Printf(TEXT("\n%d / %d단계  유지 %.0f / %.0f초"),
+			Me->GetMissionStage() + 1, Me->GetMissionStageCount(), Me->GetStageHeldSeconds(), Me->GetStageRequiredSeconds());
+	}
+
+	Text += FString::Printf(TEXT("\n(M1 테스트: 버튼 %s 누르기)"), *AMissionButton::GetLabel(Me->GetMissionButtonIndex()));
+
+	return FText::FromString(Text);
 }
 
 FText SHeadHUD::GetCenterText() const

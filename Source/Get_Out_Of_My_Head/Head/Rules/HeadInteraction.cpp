@@ -1,5 +1,8 @@
 #include "HeadInteraction.h"
 #include "HeadObject.h"
+#include "HeadGameState.h"
+#include "Get_Out_Of_My_HeadCharacter.h"
+#include "Components/SceneCaptureComponent2D.h"
 #include "Camera/PlayerCameraManager.h"
 #include "GameFramework/Character.h"
 #include "GameFramework/PlayerController.h"
@@ -109,6 +112,27 @@ AHeadObject* HeadInteraction::FindAimTarget(const APlayerController* PC, const A
 	}
 
 	return nullptr;
+}
+
+bool HeadInteraction::GetLocalViewerLocation(const UWorld* World, FVector& OutLocation)
+{
+	const APlayerController* PC = World ? World->GetFirstPlayerController() : nullptr;
+	if (!PC || !PC->IsLocalController() || !PC->PlayerCameraManager)
+	{
+		return false;
+	}
+
+	const AHeadGameState* GS = World->GetGameState<AHeadGameState>();
+	if (GS && GS->Body && PC->GetPawn() != GS->Body)
+	{
+		OutLocation = GS->Body->GetHeadCapture()->GetComponentLocation();
+	}
+	else
+	{
+		OutLocation = PC->PlayerCameraManager->GetCameraLocation();
+	}
+
+	return true;
 }
 
 FVector HeadInteraction::FindFloor(const UWorld* World, const FVector& Location, const AActor* Ignore)

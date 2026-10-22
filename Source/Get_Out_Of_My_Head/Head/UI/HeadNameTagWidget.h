@@ -4,22 +4,22 @@
 #include "Blueprint/UserWidget.h"
 #include "HeadNameTagWidget.generated.h"
 
-class AHeadObject;
-
 /**
- *  Object name tag shown above objects (name, attachments, variable, on/off, progress)
+ *  Name tag above objects and avatars (name, attachments, variable, on/off, progress)
  *  Built in Slate so it needs no widget asset and shows Korean with the default font fallback.
+ *  Drawn in world space so the mind room screen capture shows it too.
  */
 UCLASS()
 class UHeadNameTagWidget : public UUserWidget
 {
 	GENERATED_BODY()
 
-	TWeakObjectPtr<AHeadObject> OwningObject;
+	TFunction<FText()> TextSource;
 
 public:
 
-	void SetOwningObject(AHeadObject* InObject) { OwningObject = InObject; }
+	/** Function returning the text, called every frame */
+	void SetTextSource(TFunction<FText()> InTextSource) { TextSource = MoveTemp(InTextSource); }
 
 protected:
 

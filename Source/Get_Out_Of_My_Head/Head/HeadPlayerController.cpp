@@ -8,6 +8,11 @@
 #include "HeadDataAssets.h"
 #include "HeadBodyComponent.h"
 #include "HeadInteraction.h"
+#include "HeadMindRoom.h"
+#include "Components/SceneCaptureComponent2D.h"
+#include "Kismet/GameplayStatics.h"
+#include "Sound/SoundBase.h"
+#include "EngineUtils.h"
 #include "UI/SHeadHUD.h"
 #include "UI/SHeadFrontEnd.h"
 #include "EnhancedInputComponent.h"
@@ -34,6 +39,10 @@ AHeadPlayerController::AHeadPlayerController()
 	{
 		MobileExcludedMappingContexts.Add(MouseLookContext.Object);
 	}
+
+	// placeholder until M7 sounds
+	static ConstructorHelpers::FObjectFinder<USoundBase> UISoundFinder(TEXT("/Engine/EngineSounds/1kSineTonePing"));
+	UISound = UISoundFinder.Object;
 }
 
 void AHeadPlayerController::AddNotice(const FString& Text)
@@ -60,6 +69,12 @@ TArray<FString> AHeadPlayerController::GetActiveNotices() const
 void AHeadPlayerController::ClientNotice_Implementation(const FString& Text)
 {
 	AddNotice(Text);
+
+	// UI sounds are 2D and only reach this player
+	if (UISound)
+	{
+		UGameplayStatics::PlaySound2D(this, UISound, UISoundVolume);
+	}
 }
 
 bool AHeadPlayerController::IsHost() const
@@ -179,16 +194,10 @@ void AHeadPlayerController::PlayerTick(float DeltaTime)
 {
 	Super::PlayerTick(DeltaTime);
 
-	// everyone who is not in control watches the body
-	const AHeadGameState* GS = GetHeadGameState();
-	if (GS && GS->Body && GetPawn() != GS->Body && GetViewTarget() != GS->Body)
-	{
-		SetViewTarget(GS->Body);
-	}
-
-	if (IsLocalController())
+	if (IsLocalController() && !IsFrontEnd())
 	{
 		UpdateAim();
+		UpdateMindRoomView();
 	}
 
 	const double Now = FPlatformTime::Seconds();
@@ -453,4 +462,36 @@ void AHeadPlayerController::OnTakeOut()
 	{
 		ServerTakeOut(AimTarget.Get());
 	}
+}
+
+void AHeadPlayerController::UpdateMindRoomView()
+{
+	const AHeadGameState* GS = GetHeadGameState();
+	if (!GS || !GS->Body)
+	{
+		return;
+	}
+
+	USceneCaptureComponent2D* Capture = GS->Body->GetHeadCapture();
+
+	// world sounds are heard from the body's head, wherever this player is
+	if (!bListenerOnBody)
+	{
+		SetAudioListenerOverride(Capture, FVector::ZeroVector, FRotator::ZeroRotator);
+		bListenerOnBody = true;
+	}
+
+	if (!MindRoom.IsValid())
+	{
+		for (TActorIterator<AHeadMindRoom> It(GetWorld()); It; ++It)
+		{
+			MindRoom = *It;
+			break;
+		}
+	}
+
+	// only machines with someone in the mind room render the screen
+	const bool bInMindRoom = !IsControllingBody();
+	Capture->bCaptureEveryFrame = bInMindRoom && MindRoom.IsValid();
+	Capture->TextureTarget = MindRoom.IsValid() ? MindRoom->GetScreenTarget() : nullptr;
 }
