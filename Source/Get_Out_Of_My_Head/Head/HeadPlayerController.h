@@ -8,6 +8,8 @@ class UInputAction;
 class UInputMappingContext;
 class AHeadGameState;
 class AHeadPlayerState;
+class AHeadObject;
+class UHeadBodyComponent;
 class SWidget;
 
 /** A line shown at the bottom of the screen for a few seconds */
@@ -38,6 +40,21 @@ class AHeadPlayerController : public AGet_Out_Of_My_HeadPlayerController
 	/** F10: leave the room */
 	UPROPERTY(Transient)
 	TObjectPtr<UInputAction> LeaveAction;
+
+	/** Left mouse: pick up */
+	UPROPERTY(Transient)
+	TObjectPtr<UInputAction> PickUpAction;
+
+	/** Right mouse: drop, hold 1s to throw */
+	UPROPERTY(Transient)
+	TObjectPtr<UInputAction> DropAction;
+
+	/** Q: take out the last attachment */
+	UPROPERTY(Transient)
+	TObjectPtr<UInputAction> TakeOutAction;
+
+	/** Local: object under the crosshair while controlling the body */
+	TWeakObjectPtr<AHeadObject> AimTarget;
 
 	/** Mappings for the actions above */
 	UPROPERTY(Transient)
@@ -77,6 +94,15 @@ public:
 
 	AHeadPlayerState* GetHeadPlayerState() const;
 
+	/** True while this player controls the shared body */
+	bool IsControllingBody() const;
+
+	/** Body component of the shared body, or null */
+	UHeadBodyComponent* GetBodyComponent() const;
+
+	/** Key guide shown under the crosshair, only for the controller ("E: 수건 장착") */
+	FText GetGuideText() const;
+
 protected:
 
 	virtual void BeginPlay() override;
@@ -85,7 +111,7 @@ protected:
 	virtual void PlayerTick(float DeltaTime) override;
 
 	UFUNCTION(Server, Reliable)
-	void ServerInteractPressed();
+	void ServerInteractPressed(AHeadObject* Target);
 
 	UFUNCTION(Server, Reliable)
 	void ServerInteractReleased();
@@ -93,8 +119,27 @@ protected:
 	UFUNCTION(Server, Reliable)
 	void ServerHostAction();
 
+	UFUNCTION(Server, Reliable)
+	void ServerPickUp(AHeadObject* Target);
+
+	UFUNCTION(Server, Reliable)
+	void ServerDropPressed();
+
+	UFUNCTION(Server, Reliable)
+	void ServerDropReleased();
+
+	UFUNCTION(Server, Reliable)
+	void ServerTakeOut(AHeadObject* Target);
+
+	/** Finds the pointed object and moves the highlight to it */
+	void UpdateAim();
+
 	void OnInteractPressed();
 	void OnInteractReleased();
 	void OnHostAction();
 	void OnLeave();
+	void OnPickUp();
+	void OnDropPressed();
+	void OnDropReleased();
+	void OnTakeOut();
 };

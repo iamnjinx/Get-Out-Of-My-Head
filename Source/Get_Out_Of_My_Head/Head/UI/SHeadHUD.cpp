@@ -79,6 +79,26 @@ void SHeadHUD::Construct(const FArguments& InArgs)
 
 		+ SOverlay::Slot()
 		.HAlign(HAlign_Center)
+		.VAlign(VAlign_Center)
+		[
+			SNew(STextBlock)
+			.Text(FText::FromString(TEXT("+")))
+			.Font(FCoreStyle::GetDefaultFontStyle("Regular", 20))
+			.ColorAndOpacity(FLinearColor(1.0f, 1.0f, 1.0f, 0.8f))
+			.ShadowOffset(FVector2D(1.0f, 1.0f))
+			.Visibility(TAttribute<EVisibility>::CreateSP(this, &SHeadHUD::GetCrosshairVisibility))
+		]
+
+		+ SOverlay::Slot()
+		.HAlign(HAlign_Center)
+		.VAlign(VAlign_Bottom)
+		.Padding(24.0f, 24.0f, 24.0f, 140.0f)
+		[
+			MakeText(TAttribute<FText>::CreateSP(this, &SHeadHUD::GetGuideText), 17.0f, ETextJustify::Center)
+		]
+
+		+ SOverlay::Slot()
+		.HAlign(HAlign_Center)
 		.VAlign(VAlign_Bottom)
 		.Padding(24.0f)
 		[
@@ -292,7 +312,19 @@ FText SHeadHUD::GetBottomText() const
 
 	TArray<FString> Lines = PC->GetActiveNotices();
 	Lines.Add(TEXT(""));
-	Lines.Add(TEXT("E: 사용 (홀드형은 누르고 있기)   F10: 방 나가기"));
+	Lines.Add(TEXT("E: 사용·장착   좌클릭: 집기   우클릭: 내려놓기 (1초: 던지기)   Q: 꺼내기   F10: 방 나가기"));
 
 	return FText::FromString(FString::Join(Lines, TEXT("\n")));
+}
+
+FText SHeadHUD::GetGuideText() const
+{
+	const AHeadPlayerController* PC = OwningController.Get();
+	return PC ? PC->GetGuideText() : FText::GetEmpty();
+}
+
+EVisibility SHeadHUD::GetCrosshairVisibility() const
+{
+	const AHeadPlayerController* PC = OwningController.Get();
+	return PC && PC->IsControllingBody() ? EVisibility::HitTestInvisible : EVisibility::Collapsed;
 }

@@ -7,6 +7,7 @@
 #include "HeadDataAssets.h"
 #include "HeadRules.h"
 #include "HeadBodyComponent.h"
+#include "HeadInteraction.h"
 #include "Get_Out_Of_My_HeadCharacter.h"
 #include "Get_Out_Of_My_Head.h"
 #include "GameFramework/CharacterMovementComponent.h"
@@ -189,49 +190,59 @@ void AHeadGameMode::HandleHostAction(AHeadPlayerController* PC)
 	}
 }
 
-void AHeadGameMode::HandleInteractPressed(AHeadPlayerController* PC)
+void AHeadGameMode::HandleInteractPressed(AHeadPlayerController* PC, AHeadObject* AimTarget)
 {
-	AHeadGameState* GS = GetHeadGameState();
-
-	if (bFrontEnd || GS->Phase != EHeadPhase::Playing || !Body || Body->GetController() != PC || HoldTarget)
+	if (!CanAct(PC) || HoldTarget)
 	{
 		return;
 	}
 
-	const UHeadBodyComponent* BodyComponent = Body->FindComponentByClass<UHeadBodyComponent>();
-	if (BodyComponent && BodyComponent->IsFallen())
-	{
-		return;
-	}
+	AHeadObject* Held = GetBodyComponent()->GetHeldObject();
+	AHeadObject* Target = ValidateTarget(AimTarget);
 
-	AHeadObject* Target = FindObjectInReach();
-	if (!Target)
+	if (Held && Target)
 	{
-		if (!TryPressMissionButton(PC))
+		// hand + target that fit together: attach (either way round)
+		if (const FHeadAttachSlot* Slot = Target->GetObjectData()->FindAttachSlot(Held->GetObjectData()))
 		{
-			PC->ClientNotice(TEXT("가까이에 쓸 수 있는 것이 없습니다."));
+			if (Target->HasAttachment(Held->GetObjectData()))
+			{
+				PC->ClientNotice(TEXT("이미 장착되어 있다"));
+			}
+			else
+			{
+				BeginAttach(PC, Target, Held, *Slot);
+			}
+			return;
 		}
-		return;
-	}
 
-	// conditions are checked when starting, and again when a hold finishes
-	FText FailText;
-	const FHeadRuleContext Context = MakeContext(Target);
-	if (!HeadRules::CheckConditions(Context, Target->GetObjectData()->Conditions, FailText))
-	{
-		// only the controller sees why
-		PC->ClientNotice(FailText.ToString());
-		return;
-	}
+		if (const FHeadAttachSlot* Slot = Target->GetObjectData()->bCarryable ? Held->GetObjectData()->FindAttachSlot(Target->GetObjectData()) : nullptr)
+		{
+			if (Held->HasAttachment(Target->GetObjectData()))
+			{
+				PC->ClientNotice(TEXT("이미 장착되어 있다"));
+			}
+			else
+			{
+				BeginAttach(PC, Held, Target, *Slot);
+			}
+			return;
+		}
 
-	if (Target->GetObjectData()->IsHoldMode())
-	{
-		// the target is locked until the hold ends
-		HoldTarget = Target;
+		// not attachable: use the pointed object (a doll in hand + the bed)
+		BeginUse(PC, Target);
 	}
-	else
+	else if (Held)
 	{
-		Target->CompleteInteraction(Context);
+		BeginUse(PC, Held);
+	}
+	else if (Target)
+	{
+		BeginUse(PC, Target);
+	}
+	else if (!TryPressMissionButton(PC))
+	{
+		PC->ClientNotice(TEXT("가리킨 대상이 없습니다."));
 	}
 }
 
@@ -240,6 +251,107 @@ void AHeadGameMode::HandleInteractReleased(AHeadPlayerController* PC)
 	if (HoldTarget && Body && Body->GetController() == PC)
 	{
 		CancelHold();
+	}
+}
+
+void AHeadGameMode::HandlePickUp(AHeadPlayerController* PC, AHeadObject* AimTarget)
+{
+	AHeadObject* Target = CanAct(PC) ? ValidateTarget(AimTarget) : nullptr;
+	if (!Target || !Target->GetObjectData()->bCarryable)
+	{
+		return;
+	}
+
+	CancelHold();
+
+	UHeadBodyComponent* BodyComponent = GetBodyComponent();
+
+	// swap: what was in hand goes where the new object was
+	if (AHeadObject* Held = BodyComponent->GetHeldObject())
+	{
+		Held->DropAt(Target->GetActorLocation());
+	}
+
+	Target->PickUp(Body);
+	BodyComponent->SetHeldObject(Target);
+}
+
+void AHeadGameMode::HandleSecondaryPressed(AHeadPlayerController* PC)
+{
+	if (CanAct(PC) && GetBodyComponent()->GetHeldObject())
+	{
+		bSecondaryPressed = true;
+		SecondaryPressTime = Now();
+	}
+}
+
+void AHeadGameMode::HandleSecondaryReleased(AHeadPlayerController* PC)
+{
+	if (!bSecondaryPressed)
+	{
+		return;
+	}
+
+	bSecondaryPressed = false;
+
+	if (!CanAct(PC) || !GetBodyComponent()->GetHeldObject())
+	{
+		return;
+	}
+
+	CancelHold();
+
+	if (Now() - SecondaryPressTime >= GetBodyComponent()->ThrowHoldSeconds)
+	{
+		ThrowHeld(PC);
+	}
+	else
+	{
+		DropHeld();
+	}
+}
+
+void AHeadGameMode::HandleTakeOut(AHeadPlayerController* PC, AHeadObject* AimTarget)
+{
+	if (!CanAct(PC))
+	{
+		return;
+	}
+
+	UHeadBodyComponent* BodyComponent = GetBodyComponent();
+	AHeadObject* Held = BodyComponent->GetHeldObject();
+	AHeadObject* Target = ValidateTarget(AimTarget);
+
+	// the pointed host first, then what is in hand
+	AHeadObject* Source = nullptr;
+	if (Target && Target->GetAttachments().Num() > 0)
+	{
+		Source = Target;
+	}
+	else if (Held && Held->GetAttachments().Num() > 0)
+	{
+		Source = Held;
+	}
+
+	if (!Source)
+	{
+		return;
+	}
+
+	CancelHold();
+
+	AHeadObject* Item = Source->GetAttachments().Last();
+	Item->DetachFromHost();
+
+	// empty hand takes it, otherwise it goes on the floor in front of the body
+	if (!Held)
+	{
+		Item->PickUp(Body);
+		BodyComponent->SetHeldObject(Item);
+	}
+	else
+	{
+		Item->DropAt(GetDropLocation());
 	}
 }
 
@@ -575,6 +687,7 @@ void AHeadGameMode::ReleaseBody()
 {
 	// a turn ending breaks the hold
 	CancelHold();
+	bSecondaryPressed = false;
 
 	if (!Body)
 	{
@@ -649,52 +762,186 @@ void AHeadGameMode::ResetWorld()
 	GetHeadGameState()->ResetVariables(RuleSet ? RuleSet->WorldVariables : TArray<TObjectPtr<UHeadWorldVariableData>>());
 }
 
-AHeadObject* AHeadGameMode::FindObjectInReach() const
+UHeadBodyComponent* AHeadGameMode::GetBodyComponent() const
 {
-	AHeadObject* Closest = nullptr;
-	float ClosestDistance = TNumericLimits<float>::Max();
-
-	for (AHeadObject* Object : Objects)
-	{
-		if (!Object->CanBeUsed() || !IsInReach(Object))
-		{
-			continue;
-		}
-
-		const float Distance = FVector::Dist(Body->GetActorLocation(), Object->GetActorLocation());
-		if (Distance < ClosestDistance)
-		{
-			Closest = Object;
-			ClosestDistance = Distance;
-		}
-	}
-
-	return Closest;
+	return Body ? Body->FindComponentByClass<UHeadBodyComponent>() : nullptr;
 }
 
-bool AHeadGameMode::IsInReach(const AHeadObject* Object, float ExtraRange) const
+bool AHeadGameMode::CanAct(const AHeadPlayerController* PC) const
 {
-	if (!Body || !Object)
+	const UHeadBodyComponent* BodyComponent = GetBodyComponent();
+
+	return !bFrontEnd
+		&& GetHeadGameState()->Phase == EHeadPhase::Playing
+		&& PC && Body && Body->GetController() == PC
+		&& BodyComponent && !BodyComponent->IsFallen();
+}
+
+AHeadObject* AHeadGameMode::ValidateTarget(AHeadObject* AimTarget) const
+{
+	const UHeadBodyComponent* BodyComponent = GetBodyComponent();
+	return BodyComponent && HeadInteraction::IsTargetable(Body, AimTarget, BodyComponent->InteractRange) ? AimTarget : nullptr;
+}
+
+bool AHeadGameMode::IsHeldOrReachable(const AHeadObject* Object) const
+{
+	const UHeadBodyComponent* BodyComponent = GetBodyComponent();
+	if (!Object || !BodyComponent)
 	{
 		return false;
 	}
 
-	// measured to the object's edge, so a big bed is reachable from its side
-	const FBox Bounds = Object->GetComponentsBoundingBox();
-	FVector Point = Body->GetActorLocation();
-	Point.Z = FMath::Clamp(Point.Z, Bounds.Min.Z, Bounds.Max.Z);
+	if (Object == BodyComponent->GetHeldObject())
+	{
+		return true;
+	}
 
-	return FMath::Sqrt(Bounds.ComputeSquaredDistanceToPoint(Point)) <= ObjectInteractRange + ExtraRange;
+	// a small margin so a hold does not break on the edge of the reach
+	return Object->CanBeTargeted() && HeadInteraction::IsInReach(Body, Object, BodyComponent->InteractRange + 30.0f);
 }
 
-FHeadRuleContext AHeadGameMode::MakeContext(AHeadObject* Self) const
+FHeadRuleContext AHeadGameMode::MakeContext(AHeadObject* Self, AHeadObject* Item) const
 {
 	FHeadRuleContext Context;
 	Context.World = GetWorld();
 	Context.GameState = GetHeadGameState();
 	Context.Body = Body;
 	Context.Self = Self;
+	Context.Item = Item;
 	return Context;
+}
+
+void AHeadGameMode::BeginUse(AHeadPlayerController* PC, AHeadObject* Object)
+{
+	if (!Object || !Object->CanBeUsed())
+	{
+		return;
+	}
+
+	// conditions are checked when starting, and again when a hold finishes
+	FText FailText;
+	const FHeadRuleContext Context = MakeContext(Object);
+	if (!HeadRules::CheckConditions(Context, Object->GetObjectData()->Conditions, FailText))
+	{
+		// only the controller sees why
+		PC->ClientNotice(FailText.ToString());
+		return;
+	}
+
+	if (Object->GetObjectData()->IsHoldMode())
+	{
+		// the target is locked until the hold ends
+		HoldTarget = Object;
+		HoldItem = nullptr;
+	}
+	else
+	{
+		Object->CompleteInteraction(Context);
+	}
+}
+
+void AHeadGameMode::BeginAttach(AHeadPlayerController* PC, AHeadObject* Host, AHeadObject* Item, const FHeadAttachSlot& Slot)
+{
+	FText FailText;
+	if (!HeadRules::CheckConditions(MakeContext(Host, Item), Slot.Conditions, FailText))
+	{
+		PC->ClientNotice(FailText.ToString());
+		return;
+	}
+
+	if (Slot.Mode == EHeadInteractMode::Instant)
+	{
+		FinishAttach(Host, Item, Slot);
+	}
+	else
+	{
+		HoldTarget = Host;
+		HoldItem = Item;
+	}
+}
+
+void AHeadGameMode::FinishAttach(AHeadObject* Host, AHeadObject* Item, const FHeadAttachSlot& Slot)
+{
+	UHeadBodyComponent* BodyComponent = GetBodyComponent();
+	if (BodyComponent->GetHeldObject() == Item)
+	{
+		BodyComponent->SetHeldObject(nullptr);
+	}
+
+	Item->SetProgress(0.0f);
+	Item->AttachToHost(Host);
+
+	HeadRules::ApplyEffects(MakeContext(Host, Item), Slot.Effects);
+}
+
+FVector AHeadGameMode::GetDropLocation() const
+{
+	const FVector Front = Body->GetActorLocation() + Body->GetActorForwardVector() * 60.0f;
+	return HeadInteraction::FindFloor(GetWorld(), Front, Body);
+}
+
+void AHeadGameMode::DropHeld()
+{
+	UHeadBodyComponent* BodyComponent = GetBodyComponent();
+	AHeadObject* Held = BodyComponent ? BodyComponent->GetHeldObject() : nullptr;
+	if (!Held)
+	{
+		return;
+	}
+
+	BodyComponent->SetHeldObject(nullptr);
+	Held->DropAt(GetDropLocation());
+}
+
+void AHeadGameMode::ThrowHeld(const AHeadPlayerController* PC)
+{
+	UHeadBodyComponent* BodyComponent = GetBodyComponent();
+	AHeadObject* Held = BodyComponent->GetHeldObject();
+
+	// where the controller is looking, flattened
+	const FVector Direction = FRotator(0.0f, PC->GetControlRotation().Yaw, 0.0f).Vector();
+	const FVector Start = Held->GetActorLocation();
+	const FVector End = HeadInteraction::FindFloor(GetWorld(), Start + Direction * BodyComponent->ThrowDistance, Body);
+
+	// walls and large furniture stop the flight in front of them; loose objects and open doors do not
+	FCollisionQueryParams Params(SCENE_QUERY_STAT(HeadThrow));
+	Params.AddIgnoredActor(Body);
+
+	TArray<AActor*> Carried;
+	Body->GetAttachedActors(Carried, true, true);
+	Params.AddIgnoredActors(Carried);
+
+	for (AHeadObject* Object : Objects)
+	{
+		if (Object->GetObjectData()->bCarryable || Object->IsOpenDoor() || !(Object->GetObjectData()->bLargeFurniture || Object->GetObjectData()->bDoor))
+		{
+			Params.AddIgnoredActor(Object);
+		}
+	}
+
+	constexpr int32 Samples = 16;
+	TArray<FVector> Path;
+	Path.Add(Start);
+
+	for (int32 Index = 1; Index <= Samples; ++Index)
+	{
+		const float Alpha = static_cast<float>(Index) / Samples;
+		const FVector Point = FMath::Lerp(Start, End, Alpha) + FVector(0.0f, 0.0f, 4.0f * BodyComponent->ThrowArcHeight * Alpha * (1.0f - Alpha));
+
+		FHitResult Hit;
+		if (GetWorld()->LineTraceSingleByChannel(Hit, Path.Last(), Point, ECC_Visibility, Params))
+		{
+			Path.Add(Hit.Location - (Point - Path.Last()).GetSafeNormal() * 20.0f);
+			break;
+		}
+
+		Path.Add(Point);
+	}
+
+	const float Duration = FMath::Max(0.1f, BodyComponent->ThrowSeconds * (Path.Num() - 1) / Samples);
+
+	BodyComponent->SetHeldObject(nullptr);
+	Held->StartThrow(Path, Duration, Held->GetObjectData()->bBreakOnThrow);
 }
 
 void AHeadGameMode::UpdateHold(float DeltaSeconds)
@@ -704,15 +951,11 @@ void AHeadGameMode::UpdateHold(float DeltaSeconds)
 		return;
 	}
 
-	const UHeadBodyComponent* BodyComponent = Body ? Body->FindComponentByClass<UHeadBodyComponent>() : nullptr;
 	AHeadPlayerController* PC = Body ? Cast<AHeadPlayerController>(Body->GetController()) : nullptr;
 
 	// breaks: turn over, nobody in control, fell, out of reach, object gone
-	const bool bValid = GetHeadGameState()->Phase == EHeadPhase::Playing
-		&& PC
-		&& !(BodyComponent && BodyComponent->IsFallen())
-		&& HoldTarget->CanBeUsed()
-		&& IsInReach(HoldTarget, 30.0f);
+	bool bValid = CanAct(PC) && IsHeldOrReachable(HoldTarget);
+	bValid = bValid && (HoldItem ? IsHeldOrReachable(HoldItem) : HoldTarget->CanBeUsed());
 
 	if (!bValid)
 	{
@@ -720,27 +963,42 @@ void AHeadGameMode::UpdateHold(float DeltaSeconds)
 		return;
 	}
 
-	const float HoldSeconds = FMath::Max(HoldTarget->GetObjectData()->HoldSeconds, 0.01f);
-	HoldTarget->SetProgress(HoldTarget->GetProgress() + DeltaSeconds / HoldSeconds);
+	// attach holds keep their progress on the item, use holds on the object
+	const FHeadAttachSlot* Slot = HoldItem ? HoldTarget->GetObjectData()->FindAttachSlot(HoldItem->GetObjectData()) : nullptr;
+	AHeadObject* ProgressObject = HoldItem ? HoldItem.Get() : HoldTarget.Get();
+	const float HoldSeconds = FMath::Max(Slot ? Slot->HoldSeconds : HoldTarget->GetObjectData()->HoldSeconds, 0.01f);
 
-	if (HoldTarget->GetProgress() < 1.0f)
+	ProgressObject->SetProgress(ProgressObject->GetProgress() + DeltaSeconds / HoldSeconds);
+
+	if (ProgressObject->GetProgress() < 1.0f)
 	{
 		return;
 	}
 
 	// conditions are checked again when the hold finishes (shampoo gone mid-shower fails)
 	FText FailText;
-	const FHeadRuleContext Context = MakeContext(HoldTarget);
-	if (HeadRules::CheckConditions(Context, HoldTarget->GetObjectData()->Conditions, FailText))
-	{
-		AHeadObject* Completed = HoldTarget;
-		HoldTarget = nullptr;
-		Completed->CompleteInteraction(Context);
-	}
-	else
+	const FHeadRuleContext Context = MakeContext(HoldTarget, HoldItem);
+	const TArray<FHeadCondition>& Conditions = Slot ? Slot->Conditions : HoldTarget->GetObjectData()->Conditions;
+
+	if (!HeadRules::CheckConditions(Context, Conditions, FailText))
 	{
 		PC->ClientNotice(FailText.ToString());
 		CancelHold();
+		return;
+	}
+
+	AHeadObject* Target = HoldTarget;
+	AHeadObject* Item = HoldItem;
+	HoldTarget = nullptr;
+	HoldItem = nullptr;
+
+	if (Item && Slot)
+	{
+		FinishAttach(Target, Item, *Slot);
+	}
+	else
+	{
+		Target->CompleteInteraction(Context);
 	}
 }
 
@@ -752,17 +1010,28 @@ void AHeadGameMode::CancelHold()
 	}
 
 	// keep mode leaves the progress for the next player
-	if (HoldTarget->GetObjectData()->Mode == EHeadInteractMode::HoldReset)
+	if (HoldItem)
+	{
+		const FHeadAttachSlot* Slot = HoldTarget->GetObjectData()->FindAttachSlot(HoldItem->GetObjectData());
+		if (!Slot || Slot->Mode == EHeadInteractMode::HoldReset)
+		{
+			HoldItem->SetProgress(0.0f);
+		}
+	}
+	else if (HoldTarget->GetObjectData()->Mode == EHeadInteractMode::HoldReset)
 	{
 		HoldTarget->SetProgress(0.0f);
 	}
 
 	HoldTarget = nullptr;
+	HoldItem = nullptr;
 }
 
 void AHeadGameMode::HandleBodyFell()
 {
+	// falling breaks the hold and drops what is in hand
 	CancelHold();
+	DropHeld();
 
 	GetHeadGameState()->MulticastNotice(TEXT("몸이 넘어졌다!"));
 }

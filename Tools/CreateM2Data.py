@@ -159,14 +159,34 @@ THERMO_DOWN = obj("DA_Obj_ThermostatDown", "온도 조절기(−)", CUBE, (0.2, 
 BEDROOM_LIGHT = obj("DA_Obj_BedroomLightSwitch", "침실 불 스위치", CUBE, (0.1, 0.1, 0.2), (1.0, 0.9, 0.4),
                     mode=INSTANT, toggle=True, initially_on=False)
 
+BASEMENT_KEY = obj("DA_Obj_BasementKey", "지하실 열쇠", CUBE, (0.1, 0.05, 0.05), (0.85, 0.75, 0.2),
+                   carryable=True, no_interact=True)
+
+BASEMENT_DOOR = obj("DA_Obj_BasementDoor", "지하실 문", CUBE, (0.15, 1.0, 2.2), (0.45, 0.3, 0.2),
+                    mode=INSTANT, door=True, toggle=True, large_furniture=True, initially_on=False,
+                    conditions=[condition(unreal.HeadConditionType.HOLDING, "지하실 열쇠가 필요하다", object=BASEMENT_KEY)])
+
+DESK = obj("DA_Obj_Desk", "책상", CUBE, (0.8, 1.4, 0.75), (0.55, 0.4, 0.3),
+           large_furniture=True, no_interact=True,
+           attach_slots=[
+               set_props(unreal.HeadAttachSlot(), item=BASKET, mode=INSTANT, conditions=[
+                   condition(unreal.HeadConditionType.MISSION_HOLDER_PRESENT, "알을 부화시키려는 사람만 올려 둘 수 있다", mission=HATCH_EGG),
+                   condition(unreal.HeadConditionType.ATTACHED, "바구니에 수상한 알이 없다", target=unreal.HeadConditionTarget.ITEM, object=EGG),
+                   condition(unreal.HeadConditionType.ATTACHED, "바구니에 수건이 없다", target=unreal.HeadConditionTarget.ITEM, object=TOWEL)]),
+           ])
+
 # --- rule set ---------------------------------------------------------------
 
-TEST_LAYOUT = [SHAMPOO_OBJ, SHOWER, TOWEL, TOOTHBRUSH, APPLE, EGG, BASKET, THERMO_UP, THERMO_DOWN, BEDROOM_LIGHT]
+TEST_LAYOUT = [SHAMPOO_OBJ, SHOWER, TOWEL, TOOTHBRUSH, APPLE, EGG, BASKET, THERMO_UP, THERMO_DOWN, BEDROOM_LIGHT, BASEMENT_KEY]
 
 placements = []
 for index, asset in enumerate(TEST_LAYOUT):
-    offset = unreal.Vector(250.0, -540.0 + index * 120.0, 0.0)
+    offset = unreal.Vector(250.0, -600.0 + index * 120.0, 0.0)
     placements.append(set_props(unreal.HeadObjectPlacement(), object=asset, offset=offset))
+
+# large pieces stand in a second row so they do not block the small objects
+placements.append(set_props(unreal.HeadObjectPlacement(), object=DESK, offset=unreal.Vector(500.0, -250.0, 0.0)))
+placements.append(set_props(unreal.HeadObjectPlacement(), object=BASEMENT_DOOR, offset=unreal.Vector(500.0, 250.0, 0.0)))
 
 RULE_SET = set_props(make_asset("DA_RuleSet", unreal.HeadRuleSet),
                      world_variables=[ROOM_TEMP],

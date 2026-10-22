@@ -70,6 +70,26 @@ public:
 	UPROPERTY(EditAnywhere, Category="Head|Body")
 	float FallRollInterval = 1.0f;
 
+	/** Max distance from the body to an object's edge to point at it */
+	UPROPERTY(EditAnywhere, Category="Head|Body")
+	float InteractRange = 150.0f;
+
+	/** Throw distance on flat ground (2D prototype: 4 cells) */
+	UPROPERTY(EditAnywhere, Category="Head|Throw")
+	float ThrowDistance = 400.0f;
+
+	/** Height of the throw arc */
+	UPROPERTY(EditAnywhere, Category="Head|Throw")
+	float ThrowArcHeight = 120.0f;
+
+	/** Flight time of a full-distance throw */
+	UPROPERTY(EditAnywhere, Category="Head|Throw")
+	float ThrowSeconds = 0.6f;
+
+	/** Right mouse held this long throws instead of dropping */
+	UPROPERTY(EditAnywhere, Category="Head|Throw")
+	float ThrowHoldSeconds = 1.0f;
+
 	/** Broadcast on the server when the body falls */
 	FOnHeadBodyFell OnFell;
 

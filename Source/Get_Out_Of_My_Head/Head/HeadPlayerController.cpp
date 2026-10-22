@@ -4,6 +4,10 @@
 #include "HeadPlayerState.h"
 #include "HeadGameInstance.h"
 #include "Get_Out_Of_My_HeadCharacter.h"
+#include "HeadObject.h"
+#include "HeadDataAssets.h"
+#include "HeadBodyComponent.h"
+#include "HeadInteraction.h"
 #include "UI/SHeadHUD.h"
 #include "UI/SHeadFrontEnd.h"
 #include "EnhancedInputComponent.h"
@@ -141,11 +145,17 @@ void AHeadPlayerController::SetupInputComponent()
 	InteractAction = NewObject<UInputAction>(this, TEXT("IA_HeadInteract"));
 	HostAction = NewObject<UInputAction>(this, TEXT("IA_HeadHostAction"));
 	LeaveAction = NewObject<UInputAction>(this, TEXT("IA_HeadLeave"));
+	PickUpAction = NewObject<UInputAction>(this, TEXT("IA_HeadPickUp"));
+	DropAction = NewObject<UInputAction>(this, TEXT("IA_HeadDrop"));
+	TakeOutAction = NewObject<UInputAction>(this, TEXT("IA_HeadTakeOut"));
 
 	RoomMappingContext = NewObject<UInputMappingContext>(this, TEXT("IMC_HeadRoom"));
 	RoomMappingContext->MapKey(InteractAction, EKeys::E);
 	RoomMappingContext->MapKey(HostAction, EKeys::Enter);
 	RoomMappingContext->MapKey(LeaveAction, EKeys::F10);
+	RoomMappingContext->MapKey(PickUpAction, EKeys::LeftMouseButton);
+	RoomMappingContext->MapKey(DropAction, EKeys::RightMouseButton);
+	RoomMappingContext->MapKey(TakeOutAction, EKeys::Q);
 
 	if (UEnhancedInputLocalPlayerSubsystem* Subsystem = ULocalPlayer::GetSubsystem<UEnhancedInputLocalPlayerSubsystem>(GetLocalPlayer()))
 	{
@@ -158,6 +168,10 @@ void AHeadPlayerController::SetupInputComponent()
 		EnhancedInputComponent->BindAction(InteractAction, ETriggerEvent::Completed, this, &AHeadPlayerController::OnInteractReleased);
 		EnhancedInputComponent->BindAction(HostAction, ETriggerEvent::Started, this, &AHeadPlayerController::OnHostAction);
 		EnhancedInputComponent->BindAction(LeaveAction, ETriggerEvent::Started, this, &AHeadPlayerController::OnLeave);
+		EnhancedInputComponent->BindAction(PickUpAction, ETriggerEvent::Started, this, &AHeadPlayerController::OnPickUp);
+		EnhancedInputComponent->BindAction(DropAction, ETriggerEvent::Started, this, &AHeadPlayerController::OnDropPressed);
+		EnhancedInputComponent->BindAction(DropAction, ETriggerEvent::Completed, this, &AHeadPlayerController::OnDropReleased);
+		EnhancedInputComponent->BindAction(TakeOutAction, ETriggerEvent::Started, this, &AHeadPlayerController::OnTakeOut);
 	}
 }
 
@@ -172,15 +186,20 @@ void AHeadPlayerController::PlayerTick(float DeltaTime)
 		SetViewTarget(GS->Body);
 	}
 
+	if (IsLocalController())
+	{
+		UpdateAim();
+	}
+
 	const double Now = FPlatformTime::Seconds();
 	Notices.RemoveAll([Now](const FHeadNotice& Notice) { return Notice.ExpireTime <= Now; });
 }
 
-void AHeadPlayerController::ServerInteractPressed_Implementation()
+void AHeadPlayerController::ServerInteractPressed_Implementation(AHeadObject* Target)
 {
 	if (AHeadGameMode* GameMode = GetWorld()->GetAuthGameMode<AHeadGameMode>())
 	{
-		GameMode->HandleInteractPressed(this);
+		GameMode->HandleInteractPressed(this, Target);
 	}
 }
 
@@ -204,7 +223,7 @@ void AHeadPlayerController::OnInteractPressed()
 {
 	if (!IsFrontEnd())
 	{
-		ServerInteractPressed();
+		ServerInteractPressed(AimTarget.Get());
 	}
 }
 
@@ -232,5 +251,206 @@ void AHeadPlayerController::OnLeave()
 		{
 			GameInstance->LeaveRoom();
 		}
+	}
+}
+
+bool AHeadPlayerController::IsControllingBody() const
+{
+	const AHeadGameState* GS = GetHeadGameState();
+	return GS && GS->Body && GetPawn() == GS->Body;
+}
+
+UHeadBodyComponent* AHeadPlayerController::GetBodyComponent() const
+{
+	const AHeadGameState* GS = GetHeadGameState();
+	return GS && GS->Body ? GS->Body->FindComponentByClass<UHeadBodyComponent>() : nullptr;
+}
+
+namespace
+{
+	FString NameOf(const AHeadObject* Object)
+	{
+		return Object && Object->GetObjectData() ? Object->GetObjectData()->DisplayName.ToString() : FString();
+	}
+
+	/** "수건 사용", "침실 불 스위치 켜기", "지하실 문 열기"... empty when E does nothing */
+	FString UseText(const AHeadObject* Object)
+	{
+		if (!Object || !Object->CanBeUsed())
+		{
+			return FString();
+		}
+
+		const UHeadObjectData* Data = Object->GetObjectData();
+
+		FString Verb = TEXT("사용");
+		if (Data->bDoor)
+		{
+			Verb = Object->IsOn() ? TEXT("닫기") : TEXT("열기");
+		}
+		else if (Data->bToggle)
+		{
+			Verb = Object->IsOn() ? TEXT("끄기") : TEXT("켜기");
+		}
+
+		FString Text = FString::Printf(TEXT("E: %s %s"), *NameOf(Object), *Verb);
+		if (Data->IsHoldMode())
+		{
+			Text += TEXT(" (누르고 있기)");
+		}
+
+		return Text;
+	}
+
+	/** E line for something held + something pointed, following the design sheet's table */
+	FString AttachOrUseText(const AHeadObject* Held, const AHeadObject* Target)
+	{
+		if (Target->GetObjectData()->FindAttachSlot(Held->GetObjectData()))
+		{
+			return Target->HasAttachment(Held->GetObjectData())
+				? TEXT("E: 이미 장착되어 있다")
+				: FString::Printf(TEXT("E: %s 장착"), *NameOf(Held));
+		}
+
+		if (Target->GetObjectData()->bCarryable && Held->GetObjectData()->FindAttachSlot(Target->GetObjectData()))
+		{
+			return Held->HasAttachment(Target->GetObjectData())
+				? TEXT("E: 이미 장착되어 있다")
+				: FString::Printf(TEXT("E: %s 장착"), *NameOf(Target));
+		}
+
+		return UseText(Target);
+	}
+}
+
+FText AHeadPlayerController::GetGuideText() const
+{
+	if (!IsControllingBody())
+	{
+		return FText::GetEmpty();
+	}
+
+	const UHeadBodyComponent* BodyComponent = GetBodyComponent();
+	const AHeadObject* Held = BodyComponent ? BodyComponent->GetHeldObject() : nullptr;
+	const AHeadObject* Target = AimTarget.Get();
+
+	TArray<FString> Parts;
+
+	const FString EText = Held && Target ? AttachOrUseText(Held, Target) : UseText(Target ? Target : Held);
+	if (!EText.IsEmpty())
+	{
+		Parts.Add(EText);
+	}
+
+	if (Target && Target->GetObjectData()->bCarryable)
+	{
+		Parts.Add(Held
+			? FString::Printf(TEXT("좌클릭: %s(으)로 바꿔 들기"), *NameOf(Target))
+			: FString::Printf(TEXT("좌클릭: %s 집기"), *NameOf(Target)));
+	}
+
+	if (Held)
+	{
+		Parts.Add(FString::Printf(TEXT("우클릭: %s 내려놓기 (1초 이상: 던지기)"), *NameOf(Held)));
+	}
+
+	// Q takes from the pointed host first, then from what is in hand
+	const AHeadObject* Source = Target && Target->GetAttachments().Num() > 0 ? Target : (Held && Held->GetAttachments().Num() > 0 ? Held : nullptr);
+	if (Source)
+	{
+		Parts.Add(FString::Printf(TEXT("Q: %s 꺼내기"), *NameOf(Source->GetAttachments().Last())));
+	}
+
+	return FText::FromString(FString::Join(Parts, TEXT("    ")));
+}
+
+void AHeadPlayerController::UpdateAim()
+{
+	AHeadObject* NewTarget = nullptr;
+
+	if (IsControllingBody())
+	{
+		const UHeadBodyComponent* BodyComponent = GetBodyComponent();
+		NewTarget = HeadInteraction::FindAimTarget(this, Cast<ACharacter>(GetPawn()), BodyComponent ? BodyComponent->InteractRange : 150.0f);
+	}
+
+	// the highlight is local: only the controller sees it
+	if (AimTarget.Get() != NewTarget)
+	{
+		if (AHeadObject* Previous = AimTarget.Get())
+		{
+			Previous->SetHighlighted(false);
+		}
+
+		if (NewTarget)
+		{
+			NewTarget->SetHighlighted(true);
+		}
+
+		AimTarget = NewTarget;
+	}
+}
+
+void AHeadPlayerController::ServerPickUp_Implementation(AHeadObject* Target)
+{
+	if (AHeadGameMode* GameMode = GetWorld()->GetAuthGameMode<AHeadGameMode>())
+	{
+		GameMode->HandlePickUp(this, Target);
+	}
+}
+
+void AHeadPlayerController::ServerDropPressed_Implementation()
+{
+	if (AHeadGameMode* GameMode = GetWorld()->GetAuthGameMode<AHeadGameMode>())
+	{
+		GameMode->HandleSecondaryPressed(this);
+	}
+}
+
+void AHeadPlayerController::ServerDropReleased_Implementation()
+{
+	if (AHeadGameMode* GameMode = GetWorld()->GetAuthGameMode<AHeadGameMode>())
+	{
+		GameMode->HandleSecondaryReleased(this);
+	}
+}
+
+void AHeadPlayerController::ServerTakeOut_Implementation(AHeadObject* Target)
+{
+	if (AHeadGameMode* GameMode = GetWorld()->GetAuthGameMode<AHeadGameMode>())
+	{
+		GameMode->HandleTakeOut(this, Target);
+	}
+}
+
+void AHeadPlayerController::OnPickUp()
+{
+	if (IsControllingBody())
+	{
+		ServerPickUp(AimTarget.Get());
+	}
+}
+
+void AHeadPlayerController::OnDropPressed()
+{
+	if (IsControllingBody())
+	{
+		ServerDropPressed();
+	}
+}
+
+void AHeadPlayerController::OnDropReleased()
+{
+	if (IsControllingBody())
+	{
+		ServerDropReleased();
+	}
+}
+
+void AHeadPlayerController::OnTakeOut()
+{
+	if (IsControllingBody())
+	{
+		ServerTakeOut(AimTarget.Get());
 	}
 }

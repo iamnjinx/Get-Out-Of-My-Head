@@ -37,5 +37,11 @@ private:
 	/** Recent notices and key help */
 	FText GetBottomText() const;
 
+	/** Key guide for the pointed object, controller only */
+	FText GetGuideText() const;
+
+	/** Screen-center crosshair, controller only */
+	EVisibility GetCrosshairVisibility() const;
+
 	TWeakObjectPtr<AHeadPlayerController> OwningController;
 };

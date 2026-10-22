@@ -12,7 +12,9 @@ class AMissionButton;
 class AGet_Out_Of_My_HeadCharacter;
 class AHeadObject;
 class UHeadRuleSet;
+class UHeadBodyComponent;
 struct FHeadRuleContext;
+struct FHeadAttachSlot;
 
 /**
  *  Server-side round flow (M1) and object interaction (M2)
@@ -42,10 +44,6 @@ protected:
 	/** Variables, missions and object layout of a round */
 	UPROPERTY(EditDefaultsOnly, Config, Category="Head|Rules")
 	TSoftObjectPtr<UHeadRuleSet> RuleSetAsset;
-
-	/** Max distance from the body to an object's edge to use it */
-	UPROPERTY(EditDefaultsOnly, Config, Category="Head|Rules")
-	float ObjectInteractRange = 150.0f;
 
 	/** Distance from the body ring the buttons are placed on */
 	UPROPERTY(EditDefaultsOnly, Config, Category="Head|Mission")
@@ -90,9 +88,17 @@ protected:
 	UPROPERTY()
 	TArray<TObjectPtr<AHeadObject>> Objects;
 
-	/** Object being held with E, locked when E was pressed */
+	/** Object being held with E (or the host of an attach), locked when E was pressed */
 	UPROPERTY()
 	TObjectPtr<AHeadObject> HoldTarget;
+
+	/** Item being attached to HoldTarget by a hold, null for a plain use */
+	UPROPERTY()
+	TObjectPtr<AHeadObject> HoldItem;
+
+	/** Server time the right mouse button went down, for drop vs throw */
+	double SecondaryPressTime = 0.0;
+	bool bSecondaryPressed = false;
 
 	/** Where the body returns to between rounds */
 	FTransform BodyStartTransform;
@@ -124,11 +130,21 @@ public:
 	/** Host pressed the room action key: start in the lobby, back to lobby on results */
 	void HandleHostAction(AHeadPlayerController* PC);
 
-	/** Controller pressed E */
-	void HandleInteractPressed(AHeadPlayerController* PC);
+	/** E pressed on the pointed object (may be null). Follows the design sheet's hand / target table */
+	void HandleInteractPressed(AHeadPlayerController* PC, AHeadObject* AimTarget);
 
-	/** Controller released E */
+	/** E released: breaks the hold */
 	void HandleInteractReleased(AHeadPlayerController* PC);
+
+	/** Left mouse: pick up the pointed object, swapping with the one in hand */
+	void HandlePickUp(AHeadPlayerController* PC, AHeadObject* AimTarget);
+
+	/** Right mouse down / up: drop, or throw when held long enough */
+	void HandleSecondaryPressed(AHeadPlayerController* PC);
+	void HandleSecondaryReleased(AHeadPlayerController* PC);
+
+	/** Q: take out the last attachment of the pointed object, or of the one in hand */
+	void HandleTakeOut(AHeadPlayerController* PC, AHeadObject* AimTarget);
 
 protected:
 
@@ -147,12 +163,32 @@ protected:
 	/** Presses the closest mission button in reach. Returns false if none */
 	bool TryPressMissionButton(AHeadPlayerController* PC);
 
-	/** Closest usable object in reach of the body, measured to its edge */
-	AHeadObject* FindObjectInReach() const;
+	UHeadBodyComponent* GetBodyComponent() const;
 
-	bool IsInReach(const AHeadObject* Object, float ExtraRange = 0.0f) const;
+	/** True when PC controls the body during a turn and the body is on its feet */
+	bool CanAct(const AHeadPlayerController* PC) const;
 
-	FHeadRuleContext MakeContext(AHeadObject* Self) const;
+	/** Returns the client's pointed object if the server agrees it can be pointed at */
+	AHeadObject* ValidateTarget(AHeadObject* AimTarget) const;
+
+	/** True when the object is in hand, or still pointable within reach (plus a margin) */
+	bool IsHeldOrReachable(const AHeadObject* Object) const;
+
+	FHeadRuleContext MakeContext(AHeadObject* Self, AHeadObject* Item = nullptr) const;
+
+	/** E on an object: conditions, then instant effect or hold */
+	void BeginUse(AHeadPlayerController* PC, AHeadObject* Object);
+
+	/** E attaching Item to Host: slot conditions, then instant attach or hold */
+	void BeginAttach(AHeadPlayerController* PC, AHeadObject* Host, AHeadObject* Item, const FHeadAttachSlot& Slot);
+
+	void FinishAttach(AHeadObject* Host, AHeadObject* Item, const FHeadAttachSlot& Slot);
+
+	/** Floor in front of the body */
+	FVector GetDropLocation() const;
+
+	void DropHeld();
+	void ThrowHeld(const AHeadPlayerController* PC);
 
 	/** Advances the hold, checks breaks and completes it */
 	void UpdateHold(float DeltaSeconds);
