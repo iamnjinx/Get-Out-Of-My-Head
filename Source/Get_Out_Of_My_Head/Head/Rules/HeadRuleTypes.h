@@ -33,7 +33,7 @@ enum class EHeadConditionTarget : uint8
 	/** The item being attached (attach conditions only) */
 	Item,
 
-	/** Any object in the world using the given object data */
+	/** Any object in the world using TargetObject */
 	Other
 };
 
@@ -111,7 +111,11 @@ struct FHeadCondition
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Condition")
 	EHeadConditionTarget Target = EHeadConditionTarget::Self;
 
-	/** Object data for Target = Other, Holding and the attached item of Attached */
+	/** Object data the condition looks at when Target = Other (e.g. 거실 테이블) */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Condition")
+	TObjectPtr<UHeadObjectData> TargetObject;
+
+	/** Object data that must be held (Holding) or attached to the target (Attached) */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Condition")
 	TObjectPtr<UHeadObjectData> Object;
 
@@ -212,6 +216,19 @@ struct FHeadStatusTier
 	/** Chance (0-1) to fall, rolled when the body starts moving and every second while moving */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Status", meta=(ClampMin="0", ClampMax="1"))
 	float FallChance = 0.0f;
+};
+
+/** One stage of a staged mission: keep every condition true for HoldSeconds */
+USTRUCT(BlueprintType)
+struct FHeadMissionStage
+{
+	GENERATED_BODY()
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Mission")
+	TArray<FHeadCondition> Conditions;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Mission", meta=(ClampMin="0"))
+	float HoldSeconds = 0.0f;
 };
 
 /** How stacks expire */

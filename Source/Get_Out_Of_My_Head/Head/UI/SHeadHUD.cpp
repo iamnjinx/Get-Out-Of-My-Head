@@ -2,7 +2,6 @@
 #include "HeadPlayerController.h"
 #include "HeadGameState.h"
 #include "HeadPlayerState.h"
-#include "MissionButton.h"
 #include "HeadDataAssets.h"
 #include "HeadBodyComponent.h"
 #include "Get_Out_Of_My_HeadCharacter.h"
@@ -225,7 +224,7 @@ FText SHeadHUD::GetPrivateText() const
 {
 	const AHeadPlayerController* PC = OwningController.Get();
 	const AHeadPlayerState* Me = PC ? PC->GetHeadPlayerState() : nullptr;
-	if (!Me || Me->GetMissionButtonIndex() == INDEX_NONE)
+	if (!Me || !Me->GetMission())
 	{
 		return FText::GetEmpty();
 	}
@@ -245,8 +244,6 @@ FText SHeadHUD::GetPrivateText() const
 		Text += FString::Printf(TEXT("\n%d / %d단계  유지 %.0f / %.0f초"),
 			Me->GetMissionStage() + 1, Me->GetMissionStageCount(), Me->GetStageHeldSeconds(), Me->GetStageRequiredSeconds());
 	}
-
-	Text += FString::Printf(TEXT("\n(M1 테스트: 버튼 %s 누르기)"), *AMissionButton::GetLabel(Me->GetMissionButtonIndex()));
 
 	return FText::FromString(Text);
 }
@@ -296,13 +293,13 @@ FText SHeadHUD::GetCenterText() const
 		{
 			if (const AHeadPlayerState* PS = Cast<AHeadPlayerState>(PlayerState))
 			{
-				if (PS->GetRevealedMissionButtonIndex() != INDEX_NONE)
+				// every mission and whether it was completed
+				if (PS->GetRevealedMission())
 				{
-					Lines.Add(FString::Printf(TEXT("%s: %s (버튼 %s)%s"),
+					Lines.Add(FString::Printf(TEXT("%s: %s - %s"),
 						*NameOf(PS),
-						PS->GetRevealedMission() ? *PS->GetRevealedMission()->DisplayName.ToString() : TEXT("-"),
-						*AMissionButton::GetLabel(PS->GetRevealedMissionButtonIndex()),
-						PS == GS->Winner ? TEXT("  (승리)") : TEXT("")));
+						*PS->GetRevealedMission()->DisplayName.ToString(),
+						PS == GS->Winner ? TEXT("완수 (승리)") : TEXT("미완수")));
 				}
 			}
 		}

@@ -39,7 +39,7 @@ namespace
 		case EHeadConditionTarget::Other:
 			for (TActorIterator<AHeadObject> It(Context.World); It; ++It)
 			{
-				if (It->GetObjectData() == Condition.Object && !It->IsConsumed())
+				if (It->GetObjectData() == Condition.TargetObject && !It->IsConsumed())
 				{
 					Targets.Add(*It);
 				}

@@ -64,6 +64,12 @@ class AHeadPlayerController : public AGet_Out_Of_My_HeadPlayerController
 	/** Local: the audio listener sits in the body's head */
 	bool bListenerOnBody = false;
 
+	/** Local: post-round survey on the results screen */
+	TSharedPtr<SWidget> SurveyWidget;
+
+	/** Local: the survey was answered or skipped for the current results screen */
+	bool bSurveyClosed = false;
+
 	/** Mappings for the actions above */
 	UPROPERTY(Transient)
 	TObjectPtr<UInputMappingContext> RoomMappingContext;
@@ -118,6 +124,12 @@ public:
 	/** Key guide shown under the crosshair, only for the controller ("E: 수건 장착") */
 	FText GetGuideText() const;
 
+	/** Sends the survey answers to the host and closes the survey */
+	void SubmitSurvey(const TArray<FString>& Answers);
+
+	/** Closes the survey without answering */
+	void CloseSurvey();
+
 protected:
 
 	virtual void BeginPlay() override;
@@ -145,6 +157,12 @@ protected:
 
 	UFUNCTION(Server, Reliable)
 	void ServerTakeOut(AHeadObject* Target);
+
+	UFUNCTION(Server, Reliable)
+	void ServerSubmitSurvey(const TArray<FString>& Answers);
+
+	/** Opens the survey on the results screen, closes it when the results end */
+	void UpdateSurvey();
 
 	/** Finds the pointed object and moves the highlight to it */
 	void UpdateAim();

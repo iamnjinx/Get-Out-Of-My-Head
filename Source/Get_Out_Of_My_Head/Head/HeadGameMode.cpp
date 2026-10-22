@@ -2,7 +2,6 @@
 #include "HeadGameState.h"
 #include "HeadPlayerState.h"
 #include "HeadPlayerController.h"
-#include "MissionButton.h"
 #include "HeadObject.h"
 #include "HeadDataAssets.h"
 #include "HeadRules.h"
@@ -10,6 +9,9 @@
 #include "HeadInteraction.h"
 #include "HeadMindRoom.h"
 #include "HeadAvatar.h"
+#include "Playtest/HeadPlaytestLog.h"
+#include "Dom/JsonObject.h"
+#include "Dom/JsonValue.h"
 #include "Get_Out_Of_My_HeadCharacter.h"
 #include "Get_Out_Of_My_Head.h"
 #include "GameFramework/CharacterMovementComponent.h"
@@ -30,7 +32,6 @@ AHeadGameMode::AHeadGameMode()
 	DefaultPawnClass = nullptr;
 	AvatarClass = AHeadAvatar::StaticClass();
 
-	MissionButtonClass = AMissionButton::StaticClass();
 
 	RuleSetAsset = TSoftObjectPtr<UHeadRuleSet>(FSoftObjectPath(TEXT("/Game/Head/Data/DA_RuleSet.DA_RuleSet")));
 
@@ -57,8 +58,13 @@ void AHeadGameMode::StartPlay()
 
 	SpawnMindRoom();
 	SpawnBody();
-	SpawnMissionButtons();
-	SpawnObjects();
+
+	// the house map places its own objects, test maps use the rule set layout
+	if (!GatherPlacedObjects())
+	{
+		SpawnObjects();
+	}
+
 	ResetWorld();
 
 	// the host logged in before StartPlay
@@ -93,12 +99,20 @@ void AHeadGameMode::Tick(float DeltaSeconds)
 
 	AHeadGameState* GS = GetHeadGameState();
 
-	// end conditions are checked every frame, mission completion is event driven
+	// end conditions are checked every frame, even in the middle of a turn
 	if (GS->TurnOrder.Num() <= 1)
 	{
 		EndRound(EHeadEndReason::LastPlayer, nullptr);
+		return;
 	}
-	else if (Now() >= GS->RoundEndTime)
+
+	UpdateMissions(DeltaSeconds);
+	if (!IsRoundRunning())
+	{
+		return;
+	}
+
+	if (Now() >= GS->RoundEndTime)
 	{
 		EndRound(EHeadEndReason::TimeUp, nullptr);
 	}
@@ -263,10 +277,6 @@ void AHeadGameMode::HandleInteractPressed(AHeadPlayerController* PC, AHeadObject
 	{
 		BeginUse(PC, Target);
 	}
-	else if (!TryPressMissionButton(PC))
-	{
-		PC->ClientNotice(TEXT("가리킨 대상이 없습니다."));
-	}
 }
 
 void AHeadGameMode::HandleInteractReleased(AHeadPlayerController* PC)
@@ -297,6 +307,8 @@ void AHeadGameMode::HandlePickUp(AHeadPlayerController* PC, AHeadObject* AimTarg
 
 	Target->PickUp(Body);
 	BodyComponent->SetHeldObject(Target);
+
+	RecordEvent(TEXT("pickup"), Target);
 }
 
 void AHeadGameMode::HandleSecondaryPressed(AHeadPlayerController* PC)
@@ -366,6 +378,8 @@ void AHeadGameMode::HandleTakeOut(AHeadPlayerController* PC, AHeadObject* AimTar
 	AHeadObject* Item = Source->GetAttachments().Last();
 	Item->DetachFromHost();
 
+	RecordEvent(TEXT("takeout"), Item, Source->GetObjectData()->DisplayName.ToString());
+
 	// empty hand takes it, otherwise it goes on the floor in front of the body
 	if (!Held)
 	{
@@ -376,46 +390,6 @@ void AHeadGameMode::HandleTakeOut(AHeadPlayerController* PC, AHeadObject* AimTar
 	{
 		Item->DropAt(GetDropLocation());
 	}
-}
-
-bool AHeadGameMode::TryPressMissionButton(AHeadPlayerController* PC)
-{
-	AHeadGameState* GS = GetHeadGameState();
-
-	// find the closest button in reach
-	AMissionButton* Closest = nullptr;
-	float ClosestDistance = InteractRange;
-
-	for (AMissionButton* Button : MissionButtons)
-	{
-		const float Distance = FVector::Dist2D(Body->GetActorLocation(), Button->GetActorLocation());
-		if (Distance <= ClosestDistance)
-		{
-			Closest = Button;
-			ClosestDistance = Distance;
-		}
-	}
-
-	if (!Closest)
-	{
-		return false;
-	}
-
-	Closest->MulticastPress();
-
-	// pressing someone's mission button completes their mission, whoever is in control
-	for (AHeadPlayerState* PS : GS->TurnOrder)
-	{
-		if (PS && PS->GetMissionButtonIndex() == Closest->GetButtonIndex())
-		{
-			EndRound(EHeadEndReason::MissionComplete, PS);
-			return true;
-		}
-	}
-
-	PC->ClientNotice(FString::Printf(TEXT("버튼 %s: 아무 일도 일어나지 않았다."), *AMissionButton::GetLabel(Closest->GetButtonIndex())));
-
-	return true;
 }
 
 AHeadGameState* AHeadGameMode::GetHeadGameState() const
@@ -503,33 +477,6 @@ void AHeadGameMode::SpawnBody()
 	GetHeadGameState()->Body = Body;
 }
 
-void AHeadGameMode::SpawnMissionButtons()
-{
-	// every player needs a different button
-	const int32 NumButtons = FMath::Max(NumMissionButtons, MaxPlayers);
-	const FVector Center = BodyStartTransform.GetLocation();
-
-	for (int32 Index = 0; Index < NumButtons; ++Index)
-	{
-		const FVector Direction = FRotator(0.0f, 360.0f * Index / NumButtons, 0.0f).Vector();
-		FVector Location = Center + Direction * MissionButtonRingRadius;
-
-		// drop the button onto the floor
-		FHitResult Hit;
-		if (GetWorld()->LineTraceSingleByChannel(Hit, Location + FVector(0.0f, 0.0f, 300.0f), Location - FVector(0.0f, 0.0f, 1000.0f), ECC_Visibility))
-		{
-			Location = Hit.ImpactPoint;
-		}
-
-		FActorSpawnParameters SpawnParams;
-		SpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
-
-		AMissionButton* Button = GetWorld()->SpawnActor<AMissionButton>(MissionButtonClass, Location, (-Direction).Rotation(), SpawnParams);
-		Button->SetButtonIndex(Index);
-		MissionButtons.Add(Button);
-	}
-}
-
 void AHeadGameMode::StartRound()
 {
 	AHeadGameState* GS = GetHeadGameState();
@@ -552,18 +499,6 @@ void AHeadGameMode::StartRound()
 
 	GS->TurnOrder = Players;
 
-	// secret missions, each player gets a different button
-	TArray<int32> ButtonIndices;
-	for (int32 Index = 0; Index < MissionButtons.Num(); ++Index)
-	{
-		ButtonIndices.Add(Index);
-	}
-
-	for (int32 Index = ButtonIndices.Num() - 1; Index > 0; --Index)
-	{
-		ButtonIndices.Swap(Index, FMath::RandRange(0, Index));
-	}
-
 	// mission pool, handed out again when there are more players than missions
 	TArray<UHeadMissionData*> MissionPool;
 	if (RuleSet)
@@ -585,7 +520,7 @@ void AHeadGameMode::StartRound()
 	for (int32 Index = 0; Index < Players.Num(); ++Index)
 	{
 		UHeadMissionData* Mission = MissionPool.Num() > 0 ? MissionPool[Index % MissionPool.Num()] : nullptr;
-		Players[Index]->SetMission(Mission, ButtonIndices[Index]);
+		Players[Index]->SetMission(Mission, Index);
 	}
 
 	ResetWorld();
@@ -593,6 +528,11 @@ void AHeadGameMode::StartRound()
 	GS->EndReason = EHeadEndReason::None;
 	GS->Winner = nullptr;
 	GS->RoundEndTime = Now() + RoundSeconds;
+
+	TurnCount = 0;
+	RoundId = HeadPlaytestLog::MakeRoundId();
+	RoundStartTime = Now();
+	RoundEvents.Reset();
 
 	GS->MulticastNotice(TEXT("판이 시작되었습니다."));
 
@@ -615,6 +555,9 @@ void AHeadGameMode::BeginTurn(int32 TurnIndex)
 	GS->CurrentController = PS;
 	GS->NextController = nullptr;
 	GS->PhaseEndTime = Now() + TurnSeconds;
+
+	++TurnCount;
+	RecordEvent(TEXT("turn"), nullptr);
 
 	if (PC && Body)
 	{
@@ -650,6 +593,9 @@ void AHeadGameMode::BeginHandover()
 void AHeadGameMode::EndRound(EHeadEndReason Reason, AHeadPlayerState* InWinner)
 {
 	AHeadGameState* GS = GetHeadGameState();
+
+	// recorded before the controller is released
+	WriteRoundLog(Reason, InWinner);
 
 	ReleaseBody();
 
@@ -901,6 +847,7 @@ void AHeadGameMode::BeginUse(AHeadPlayerController* PC, AHeadObject* Object)
 	if (!HeadRules::CheckConditions(Context, Object->GetObjectData()->Conditions, FailText))
 	{
 		// only the controller sees why
+		RecordEvent(TEXT("fail"), Object, FailText.ToString());
 		PC->ClientNotice(FailText.ToString());
 		return;
 	}
@@ -913,6 +860,7 @@ void AHeadGameMode::BeginUse(AHeadPlayerController* PC, AHeadObject* Object)
 	}
 	else
 	{
+		RecordEvent(TEXT("use"), Object);
 		Object->CompleteInteraction(Context);
 	}
 }
@@ -948,6 +896,8 @@ void AHeadGameMode::FinishAttach(AHeadObject* Host, AHeadObject* Item, const FHe
 	Item->SetProgress(0.0f);
 	Item->AttachToHost(Host);
 
+	RecordEvent(TEXT("attach"), Item, Host->GetObjectData()->DisplayName.ToString());
+
 	HeadRules::ApplyEffects(MakeContext(Host, Item), Slot.Effects);
 }
 
@@ -968,6 +918,8 @@ void AHeadGameMode::DropHeld()
 
 	BodyComponent->SetHeldObject(nullptr);
 	Held->DropAt(GetDropLocation());
+
+	RecordEvent(TEXT("drop"), Held);
 }
 
 void AHeadGameMode::ThrowHeld(const AHeadPlayerController* PC)
@@ -1019,6 +971,8 @@ void AHeadGameMode::ThrowHeld(const AHeadPlayerController* PC)
 
 	BodyComponent->SetHeldObject(nullptr);
 	Held->StartThrow(Path, Duration, Held->GetObjectData()->bBreakOnThrow);
+
+	RecordEvent(TEXT("throw"), Held);
 }
 
 void AHeadGameMode::UpdateHold(float DeltaSeconds)
@@ -1075,6 +1029,7 @@ void AHeadGameMode::UpdateHold(float DeltaSeconds)
 	}
 	else
 	{
+		RecordEvent(TEXT("use"), Target);
 		Target->CompleteInteraction(Context);
 	}
 }
@@ -1111,4 +1066,218 @@ void AHeadGameMode::HandleBodyFell()
 	DropHeld();
 
 	GetHeadGameState()->MulticastNotice(TEXT("몸이 넘어졌다!"));
+}
+
+bool AHeadGameMode::GatherPlacedObjects()
+{
+	for (TActorIterator<AHeadObject> It(GetWorld()); It; ++It)
+	{
+		if (It->GetObjectData())
+		{
+			Objects.Add(*It);
+		}
+	}
+
+	return Objects.Num() > 0;
+}
+
+void AHeadGameMode::UpdateMissions(float DeltaSeconds)
+{
+	AHeadGameState* GS = GetHeadGameState();
+	const FHeadRuleContext Context = MakeContext(nullptr);
+
+	TArray<AHeadPlayerState*> Completed;
+
+	// only players still in the round: a leaver's mission can no longer be completed
+	for (AHeadPlayerState* PS : GS->TurnOrder)
+	{
+		const UHeadMissionData* Mission = PS ? PS->GetMission() : nullptr;
+		if (!Mission)
+		{
+			continue;
+		}
+
+		FText Ignored;
+
+		if (!Mission->bStaged)
+		{
+			if (Mission->Conditions.Num() > 0 && HeadRules::CheckConditions(Context, Mission->Conditions, Ignored))
+			{
+				Completed.Add(PS);
+			}
+			continue;
+		}
+
+		const int32 StageCount = Mission->Stages.Num();
+		if (StageCount == 0)
+		{
+			continue;
+		}
+
+		int32 Stage = FMath::Clamp(PS->GetMissionStage(), 0, StageCount - 1);
+		float Held = PS->GetStageHeldSeconds();
+
+		if (!HeadRules::CheckConditions(Context, Mission->Prerequisites, Ignored))
+		{
+			// prerequisite broken: back to stage 1
+			Stage = 0;
+			Held = 0.0f;
+		}
+		else if (HeadRules::CheckConditions(Context, Mission->Stages[Stage].Conditions, Ignored))
+		{
+			Held += DeltaSeconds;
+
+			if (Held >= Mission->Stages[Stage].HoldSeconds)
+			{
+				if (Stage + 1 >= StageCount)
+				{
+					Completed.Add(PS);
+				}
+				else
+				{
+					++Stage;
+					Held = 0.0f;
+				}
+			}
+		}
+		else
+		{
+			// only this stage's time restarts, finished stages are kept
+			Held = 0.0f;
+		}
+
+		PS->SetStageProgress(Stage, StageCount, FMath::Min(Held, Mission->Stages[Stage].HoldSeconds), Mission->Stages[Stage].HoldSeconds);
+	}
+
+	if (Completed.Num() == 0)
+	{
+		return;
+	}
+
+	// simultaneous completion: lower priority number wins, then the earlier assignment
+	Completed.Sort([](const AHeadPlayerState& A, const AHeadPlayerState& B)
+	{
+		const int32 PriorityA = A.GetMission()->Priority;
+		const int32 PriorityB = B.GetMission()->Priority;
+		return PriorityA != PriorityB ? PriorityA < PriorityB : A.GetAssignmentOrder() < B.GetAssignmentOrder();
+	});
+
+	EndRound(EHeadEndReason::MissionComplete, Completed[0]);
+}
+
+void AHeadGameMode::RecordEvent(const FString& Action, const AHeadObject* Object, const FString& Detail)
+{
+	if (RoundId.IsEmpty() || !IsRoundRunning())
+	{
+		return;
+	}
+
+	const AHeadGameState* GS = GetHeadGameState();
+
+	TSharedRef<FJsonObject> Event = MakeShared<FJsonObject>();
+	Event->SetNumberField(TEXT("t"), FMath::RoundToInt(Now() - RoundStartTime));
+	Event->SetNumberField(TEXT("turn"), TurnCount);
+	Event->SetStringField(TEXT("controller"), GS->CurrentController ? GS->CurrentController->GetPlayerName() : FString());
+	Event->SetStringField(TEXT("action"), Action);
+
+	if (Object && Object->GetObjectData())
+	{
+		Event->SetStringField(TEXT("object"), Object->GetObjectData()->DisplayName.ToString());
+	}
+
+	if (!Detail.IsEmpty())
+	{
+		Event->SetStringField(TEXT("detail"), Detail);
+	}
+
+	RoundEvents.Add(MakeShared<FJsonValueObject>(Event));
+}
+
+void AHeadGameMode::WriteRoundLog(EHeadEndReason Reason, AHeadPlayerState* InWinner)
+{
+	if (RoundId.IsEmpty())
+	{
+		return;
+	}
+
+	const AHeadGameState* GS = GetHeadGameState();
+
+	TSharedRef<FJsonObject> Entry = MakeShared<FJsonObject>();
+	Entry->SetStringField(TEXT("type"), TEXT("round"));
+	Entry->SetStringField(TEXT("round_id"), RoundId);
+	Entry->SetNumberField(TEXT("player_count"), GS->PlayerArray.Num());
+	Entry->SetNumberField(TEXT("duration_sec"), FMath::RoundToInt(Now() - RoundStartTime));
+	Entry->SetNumberField(TEXT("turns"), TurnCount);
+
+	FString ReasonText;
+	switch (Reason)
+	{
+	case EHeadEndReason::MissionComplete: ReasonText = TEXT("mission_complete"); break;
+	case EHeadEndReason::TimeUp: ReasonText = TEXT("time_up"); break;
+	case EHeadEndReason::LastPlayer: ReasonText = TEXT("last_player"); break;
+	default: ReasonText = TEXT("none"); break;
+	}
+	Entry->SetStringField(TEXT("end_reason"), ReasonText);
+
+	// who held which mission, including players who left during the round
+	TArray<TSharedPtr<FJsonValue>> Players;
+	for (const APlayerState* PlayerState : GS->PlayerArray)
+	{
+		if (const AHeadPlayerState* PS = Cast<AHeadPlayerState>(PlayerState))
+		{
+			TSharedRef<FJsonObject> Player = MakeShared<FJsonObject>();
+			Player->SetStringField(TEXT("name"), PS->GetPlayerName());
+			Player->SetStringField(TEXT("mission"), PS->GetMission() ? PS->GetMission()->DisplayName.ToString() : FString());
+			Player->SetBoolField(TEXT("in_round"), GS->TurnOrder.Contains(PS));
+			Players.Add(MakeShared<FJsonValueObject>(Player));
+		}
+	}
+	Entry->SetArrayField(TEXT("players"), Players);
+
+	if (InWinner)
+	{
+		const AHeadPlayerState* Controller = GS->CurrentController ? GS->CurrentController.Get() : GS->NextController.Get();
+
+		Entry->SetStringField(TEXT("winner"), InWinner->GetPlayerName());
+		Entry->SetStringField(TEXT("winner_mission"), InWinner->GetMission() ? InWinner->GetMission()->DisplayName.ToString() : FString());
+		Entry->SetStringField(TEXT("controller_at_completion"), Controller ? Controller->GetPlayerName() : FString());
+		Entry->SetBoolField(TEXT("completed_on_others_turn"), Controller != InWinner);
+		Entry->SetNumberField(TEXT("completion_turn"), TurnCount);
+	}
+
+	Entry->SetArrayField(TEXT("events"), RoundEvents);
+
+	HeadPlaytestLog::Append(Entry);
+
+	LastRoundId = RoundId;
+	RoundId.Empty();
+}
+
+void AHeadGameMode::HandleSurvey(AHeadPlayerController* PC, const TArray<FString>& Answers)
+{
+	if (!PC || LastRoundId.IsEmpty() || GetHeadGameState()->Phase != EHeadPhase::Results)
+	{
+		return;
+	}
+
+	const AHeadPlayerState* PS = PC->GetPlayerState<AHeadPlayerState>();
+
+	TSharedRef<FJsonObject> Entry = MakeShared<FJsonObject>();
+	Entry->SetStringField(TEXT("type"), TEXT("survey"));
+	Entry->SetStringField(TEXT("round_id"), LastRoundId);
+	Entry->SetStringField(TEXT("player"), PS ? PS->GetPlayerName() : FString());
+	Entry->SetStringField(TEXT("mission"), PS && PS->GetRevealedMission() ? PS->GetRevealedMission()->DisplayName.ToString() : FString());
+
+	static const TCHAR* Keys[] = { TEXT("deduction"), TEXT("mind_room"), TEXT("unfair_moment"), TEXT("fail_text_helpful") };
+
+	TSharedRef<FJsonObject> AnswerObject = MakeShared<FJsonObject>();
+	for (int32 Index = 0; Index < UE_ARRAY_COUNT(Keys); ++Index)
+	{
+		AnswerObject->SetStringField(Keys[Index], Answers.IsValidIndex(Index) ? Answers[Index].Left(1000) : FString());
+	}
+	Entry->SetObjectField(TEXT("answers"), AnswerObject);
+
+	HeadPlaytestLog::Append(Entry);
+
+	PC->ClientNotice(TEXT("설문이 저장되었습니다. 고마워요!"));
 }

@@ -15,14 +15,6 @@ class AHeadPlayerState : public APlayerState
 {
 	GENERATED_BODY()
 
-	/** Index of the mission button assigned to this player, owner only */
-	UPROPERTY(Replicated)
-	int32 MissionButtonIndex = INDEX_NONE;
-
-	/** Same as MissionButtonIndex, but visible to everyone once the round ends */
-	UPROPERTY(Replicated)
-	int32 RevealedMissionButtonIndex = INDEX_NONE;
-
 	/** Secret mission, owner only */
 	UPROPERTY(Replicated)
 	TObjectPtr<UHeadMissionData> Mission;
@@ -45,12 +37,15 @@ class AHeadPlayerState : public APlayerState
 	UPROPERTY(Replicated)
 	float StageRequiredSeconds = 0.0f;
 
+	/** Server: order in which missions were handed out, breaks priority ties */
+	int32 AssignmentOrder = INDEX_NONE;
+
 public:
 
 	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
 
-	/** Server: assigns the secret mission and its M1 dummy button */
-	void SetMission(UHeadMissionData* InMission, int32 ButtonIndex);
+	/** Server: assigns the secret mission */
+	void SetMission(UHeadMissionData* InMission, int32 InAssignmentOrder);
 
 	/** Server: makes the mission visible to everyone */
 	void RevealMission();
@@ -58,20 +53,15 @@ public:
 	/** Server: clears mission data for the next round */
 	void ClearMission();
 
-	/** Returns the mission. Only valid on the server and the owning client */
-	int32 GetMissionButtonIndex() const { return MissionButtonIndex; }
-
-	/** Returns the mission revealed at the end of the round */
-	int32 GetRevealedMissionButtonIndex() const { return RevealedMissionButtonIndex; }
+	/** Server: progress of a staged mission */
+	void SetStageProgress(int32 Stage, int32 StageCount, float HeldSeconds, float RequiredSeconds);
 
 	/** Returns the mission. Only valid on the server and the owning client */
 	UHeadMissionData* GetMission() const { return Mission; }
 
 	UHeadMissionData* GetRevealedMission() const { return RevealedMission; }
 
-	/** Server: progress of a staged mission */
-	void SetStageProgress(int32 Stage, int32 StageCount, float HeldSeconds, float RequiredSeconds);
-
+	int32 GetAssignmentOrder() const { return AssignmentOrder; }
 	int32 GetMissionStage() const { return MissionStage; }
 	int32 GetMissionStageCount() const { return MissionStageCount; }
 	float GetStageHeldSeconds() const { return StageHeldSeconds; }

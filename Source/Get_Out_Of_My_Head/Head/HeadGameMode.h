@@ -8,7 +8,6 @@
 class AHeadGameState;
 class AHeadPlayerState;
 class AHeadPlayerController;
-class AMissionButton;
 class AGet_Out_Of_My_HeadCharacter;
 class AHeadObject;
 class UHeadRuleSet;
@@ -19,7 +18,7 @@ struct FHeadRuleContext;
 struct FHeadAttachSlot;
 
 /**
- *  Server-side round flow (M1), object interaction (M2) and the mind room (M3)
+ *  Server-side round flow (M1), object interaction (M2), the mind room (M3), missions and playtest records (M4)
  *  One shared body is possessed by the next player every turn, everyone else controls their avatar in the mind room.
  *  Lobby -> Playing <-> Handover -> Results -> Lobby
  *  In standalone (front end) it does nothing and the controller shows the menu instead.
@@ -43,25 +42,9 @@ protected:
 	UPROPERTY(EditDefaultsOnly, Config, Category="Head|MindRoom")
 	FVector MindRoomLocation = FVector(0.0f, 0.0f, -3000.0f);
 
-	/** Class of the dummy mission buttons */
-	UPROPERTY(EditDefaultsOnly, Category="Head|Mission")
-	TSubclassOf<AMissionButton> MissionButtonClass;
-
-	/** Number of dummy mission buttons. Buttons nobody owns are decoys */
-	UPROPERTY(EditDefaultsOnly, Config, Category="Head|Mission")
-	int32 NumMissionButtons = 4;
-
 	/** Variables, missions and object layout of a round */
 	UPROPERTY(EditDefaultsOnly, Config, Category="Head|Rules")
 	TSoftObjectPtr<UHeadRuleSet> RuleSetAsset;
-
-	/** Distance from the body ring the buttons are placed on */
-	UPROPERTY(EditDefaultsOnly, Config, Category="Head|Mission")
-	float MissionButtonRingRadius = 500.0f;
-
-	/** Max distance between the body and a button to press it */
-	UPROPERTY(EditDefaultsOnly, Config, Category="Head|Mission")
-	float InteractRange = 180.0f;
 
 	/** Seconds per turn */
 	UPROPERTY(EditDefaultsOnly, Config, Category="Head|Round")
@@ -87,10 +70,6 @@ protected:
 	UPROPERTY()
 	TObjectPtr<AGet_Out_Of_My_HeadCharacter> Body;
 
-	/** Spawned mission buttons, indexed by button index */
-	UPROPERTY()
-	TArray<TObjectPtr<AMissionButton>> MissionButtons;
-
 	UPROPERTY()
 	TObjectPtr<UHeadRuleSet> RuleSet;
 
@@ -115,6 +94,17 @@ protected:
 	/** Item being attached to HoldTarget by a hold, null for a plain use */
 	UPROPERTY()
 	TObjectPtr<AHeadObject> HoldItem;
+
+	/** Turns started this round (1 = first turn) */
+	int32 TurnCount = 0;
+
+	/** Playtest record of the current round */
+	FString RoundId;
+	double RoundStartTime = 0.0;
+	TArray<TSharedPtr<class FJsonValue>> RoundEvents;
+
+	/** Round the post-round surveys belong to */
+	FString LastRoundId;
 
 	/** Server time the right mouse button went down, for drop vs throw */
 	double SecondaryPressTime = 0.0;
@@ -166,6 +156,9 @@ public:
 	/** Q: take out the last attachment of the pointed object, or of the one in hand */
 	void HandleTakeOut(AHeadPlayerController* PC, AHeadObject* AimTarget);
 
+	/** Post-round survey answers, appended to the playtest log */
+	void HandleSurvey(AHeadPlayerController* PC, const TArray<FString>& Answers);
+
 protected:
 
 	AHeadGameState* GetHeadGameState() const;
@@ -182,14 +175,22 @@ protected:
 	void ReturnToAvatar(AController* Controller);
 
 	void SpawnBody();
-	void SpawnMissionButtons();
 	void SpawnObjects();
+
+	/** Uses objects placed in the level (the house map). Returns false if there are none */
+	bool GatherPlacedObjects();
+
+	/** Checks every mission in the round, advances staged missions, ends the round on completion */
+	void UpdateMissions(float DeltaSeconds);
+
+	/** Adds a controller action to the playtest record ("use", "pickup"...) */
+	void RecordEvent(const FString& Action, const AHeadObject* Object, const FString& Detail = FString());
+
+	/** Writes the finished round to the playtest log */
+	void WriteRoundLog(EHeadEndReason Reason, AHeadPlayerState* InWinner);
 
 	/** Objects, variables and body statuses back to the start of a round */
 	void ResetWorld();
-
-	/** Presses the closest mission button in reach. Returns false if none */
-	bool TryPressMissionButton(AHeadPlayerController* PC);
 
 	UHeadBodyComponent* GetBodyComponent() const;
 

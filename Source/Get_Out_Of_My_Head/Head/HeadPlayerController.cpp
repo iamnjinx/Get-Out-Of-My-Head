@@ -15,6 +15,7 @@
 #include "EngineUtils.h"
 #include "UI/SHeadHUD.h"
 #include "UI/SHeadFrontEnd.h"
+#include "UI/SHeadSurvey.h"
 #include "EnhancedInputComponent.h"
 #include "EnhancedInputSubsystems.h"
 #include "InputAction.h"
@@ -134,6 +135,8 @@ void AHeadPlayerController::BeginPlay()
 
 void AHeadPlayerController::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
+	CloseSurvey();
+
 	if (ScreenWidget.IsValid())
 	{
 		if (UGameViewportClient* ViewportClient = GetLocalPlayer() ? GetLocalPlayer()->ViewportClient : nullptr)
@@ -198,6 +201,7 @@ void AHeadPlayerController::PlayerTick(float DeltaTime)
 	{
 		UpdateAim();
 		UpdateMindRoomView();
+		UpdateSurvey();
 	}
 
 	const double Now = FPlatformTime::Seconds();
@@ -494,4 +498,72 @@ void AHeadPlayerController::UpdateMindRoomView()
 	const bool bInMindRoom = !IsControllingBody();
 	Capture->bCaptureEveryFrame = bInMindRoom && MindRoom.IsValid();
 	Capture->TextureTarget = MindRoom.IsValid() ? MindRoom->GetScreenTarget() : nullptr;
+}
+
+void AHeadPlayerController::UpdateSurvey()
+{
+	const AHeadGameState* GS = GetHeadGameState();
+	const bool bResults = GS && GS->Phase == EHeadPhase::Results;
+
+	if (!bResults)
+	{
+		// next results screen asks again
+		CloseSurvey();
+		bSurveyClosed = false;
+		return;
+	}
+
+	if (SurveyWidget.IsValid() || bSurveyClosed)
+	{
+		return;
+	}
+
+	UGameViewportClient* ViewportClient = GetLocalPlayer() ? GetLocalPlayer()->ViewportClient : nullptr;
+	if (!ViewportClient)
+	{
+		return;
+	}
+
+	SurveyWidget = SNew(SHeadSurvey).OwningController(this);
+	ViewportClient->AddViewportWidgetContent(SurveyWidget.ToSharedRef(), 20);
+
+	// typing needs the cursor, the game still gets the host's Enter once the boxes lose focus
+	FInputModeGameAndUI InputMode;
+	InputMode.SetHideCursorDuringCapture(false);
+	SetInputMode(InputMode);
+	SetShowMouseCursor(true);
+}
+
+void AHeadPlayerController::SubmitSurvey(const TArray<FString>& Answers)
+{
+	ServerSubmitSurvey(Answers);
+	bSurveyClosed = true;
+	CloseSurvey();
+}
+
+void AHeadPlayerController::CloseSurvey()
+{
+	if (!SurveyWidget.IsValid())
+	{
+		return;
+	}
+
+	if (UGameViewportClient* ViewportClient = GetLocalPlayer() ? GetLocalPlayer()->ViewportClient : nullptr)
+	{
+		ViewportClient->RemoveViewportWidgetContent(SurveyWidget.ToSharedRef());
+	}
+
+	SurveyWidget.Reset();
+	bSurveyClosed = true;
+
+	SetInputMode(FInputModeGameOnly());
+	SetShowMouseCursor(false);
+}
+
+void AHeadPlayerController::ServerSubmitSurvey_Implementation(const TArray<FString>& Answers)
+{
+	if (AHeadGameMode* GameMode = GetWorld()->GetAuthGameMode<AHeadGameMode>())
+	{
+		GameMode->HandleSurvey(this, Answers);
+	}
 }

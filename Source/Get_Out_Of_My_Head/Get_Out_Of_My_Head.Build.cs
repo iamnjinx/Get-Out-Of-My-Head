@@ -20,7 +20,8 @@ public class Get_Out_Of_My_Head : ModuleRules
 			"UMG",
 			"Slate",
 			"SlateCore",
-			"EngineSettings"
+			"EngineSettings",
+			"Json"
 		});
 
 		PrivateDependencyModuleNames.AddRange(new string[] { });

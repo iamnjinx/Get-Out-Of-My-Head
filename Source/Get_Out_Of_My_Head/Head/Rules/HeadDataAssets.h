@@ -55,7 +55,12 @@ public:
 	FText Unit;
 };
 
-/** A secret mission. M2 only needs its identity, M4 adds the completion rules */
+/**
+ *  A secret mission
+ *  Condition missions complete the moment every condition is true.
+ *  Staged missions complete their stages in order, holding each stage's conditions for its time:
+ *  a broken prerequisite restarts from stage 1, a broken stage condition only restarts that stage's time.
+ */
 UCLASS(BlueprintType)
 class UHeadMissionData : public UPrimaryDataAsset
 {
@@ -72,6 +77,20 @@ public:
 	/** Lower wins when several missions complete at once */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Mission")
 	int32 Priority = 0;
+
+	/** Condition mission: all must be true at the same time */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Mission", meta=(EditCondition="!bStaged"))
+	TArray<FHeadCondition> Conditions;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Mission")
+	bool bStaged = false;
+
+	/** Staged mission: must stay true the whole time, otherwise back to stage 1 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Mission", meta=(EditCondition="bStaged"))
+	TArray<FHeadCondition> Prerequisites;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Mission", meta=(EditCondition="bStaged"))
+	TArray<FHeadMissionStage> Stages;
 };
 
 /**
