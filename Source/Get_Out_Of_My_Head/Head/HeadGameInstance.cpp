@@ -4,11 +4,14 @@
 #include "GameFramework/PlayerController.h"
 #include "GameMapsSettings.h"
 #include "Kismet/GameplayStatics.h"
+#include "Misc/ConfigCacheIni.h"
 #include "Misc/PackageName.h"
 
 void UHeadGameInstance::Init()
 {
 	Super::Init();
+
+	GConfig->GetString(TEXT("/Script/Get_Out_Of_My_Head.HeadGameInstance"), TEXT("Nickname"), Nickname, GGameUserSettingsIni);
 
 	NetworkFailureHandle = GEngine->OnNetworkFailure().AddUObject(this, &UHeadGameInstance::HandleNetworkFailure);
 	TravelFailureHandle = GEngine->OnTravelFailure().AddUObject(this, &UHeadGameInstance::HandleTravelFailure);
@@ -27,7 +30,7 @@ void UHeadGameInstance::HostRoom()
 	FrontEndMessage.Empty();
 	bLeavingRoom = false;
 
-	UGameplayStatics::OpenLevel(this, FName(*GetRoomMap()), true, TEXT("listen"));
+	UGameplayStatics::OpenLevel(this, FName(*GetRoomMap()), true, TEXT("listen") + GetNameOption());
 }
 
 void UHeadGameInstance::JoinRoom(const FString& Address)
@@ -37,7 +40,7 @@ void UHeadGameInstance::JoinRoom(const FString& Address)
 
 	if (APlayerController* PC = GetFirstLocalPlayerController())
 	{
-		PC->ClientTravel(Address, TRAVEL_Absolute);
+		PC->ClientTravel(Address + GetNameOption(), TRAVEL_Absolute);
 	}
 }
 
@@ -77,6 +80,29 @@ void UHeadGameInstance::HandleTravelFailure(UWorld* World, ETravelFailure::Type 
 	}
 
 	FrontEndMessage = FString::Printf(TEXT("방에 들어가지 못했습니다. (%s)"), *ErrorString);
+}
+
+void UHeadGameInstance::SetNickname(const FString& InNickname)
+{
+	// characters that would break the travel URL are dropped
+	FString Clean;
+	for (const TCHAR Character : InNickname.TrimStartAndEnd())
+	{
+		if (!FChar::IsWhitespace(Character) && !FCString::Strchr(TEXT("?=#/\\:;\"'"), Character))
+		{
+			Clean.AppendChar(Character);
+		}
+	}
+
+	Nickname = Clean.Left(16);
+
+	GConfig->SetString(TEXT("/Script/Get_Out_Of_My_Head.HeadGameInstance"), TEXT("Nickname"), *Nickname, GGameUserSettingsIni);
+	GConfig->Flush(false, GGameUserSettingsIni);
+}
+
+FString UHeadGameInstance::GetNameOption() const
+{
+	return Nickname.IsEmpty() ? FString() : FString::Printf(TEXT("?Name=%s"), *Nickname);
 }
 
 FString UHeadGameInstance::GetRoomMap()

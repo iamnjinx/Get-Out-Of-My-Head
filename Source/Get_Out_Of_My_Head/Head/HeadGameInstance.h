@@ -19,6 +19,9 @@ class UHeadGameInstance : public UGameInstance
 	/** Message shown on the front end */
 	FString FrontEndMessage;
 
+	/** Name shown to the other players, kept in GameUserSettings.ini */
+	FString Nickname;
+
 	/** True while leaving on purpose, so the disconnect is not reported as an error */
 	bool bLeavingRoom = false;
 
@@ -41,6 +44,11 @@ public:
 
 	const FString& GetFrontEndMessage() const { return FrontEndMessage; }
 
+	const FString& GetNickname() const { return Nickname; }
+
+	/** Cleans up and remembers the nickname used when hosting or joining */
+	void SetNickname(const FString& InNickname);
+
 protected:
 
 	void HandleNetworkFailure(UWorld* World, UNetDriver* NetDriver, ENetworkFailure::Type FailureType, const FString& ErrorString);
@@ -48,4 +56,7 @@ protected:
 
 	/** Returns the room map package name */
 	static FString GetRoomMap();
+
+	/** "?Name=..." URL option, empty without a nickname */
+	FString GetNameOption() const;
 };

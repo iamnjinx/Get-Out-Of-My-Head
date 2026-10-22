@@ -32,4 +32,9 @@ private:
 	TWeakObjectPtr<UHeadGameInstance> GameInstance;
 
 	TSharedPtr<SEditableTextBox> AddressBox;
+
+	TSharedPtr<SEditableTextBox> NameBox;
+
+	/** Remembers the nickname typed in the box */
+	void ApplyNickname();
 };

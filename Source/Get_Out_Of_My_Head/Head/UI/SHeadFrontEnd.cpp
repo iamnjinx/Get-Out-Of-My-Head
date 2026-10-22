@@ -65,6 +65,16 @@ void SHeadFrontEnd::Construct(const FArguments& InArgs)
 
 				+ SVerticalBox::Slot()
 				.AutoHeight()
+				.Padding(0.0f, 0.0f, 0.0f, 16.0f)
+				[
+					SAssignNew(NameBox, SEditableTextBox)
+					.Text(FText::FromString(GameInstance.IsValid() ? GameInstance->GetNickname() : FString()))
+					.HintText(FText::FromString(TEXT("닉네임 (16자까지)")))
+					.Font(FCoreStyle::GetDefaultFontStyle("Regular", 16))
+				]
+
+				+ SVerticalBox::Slot()
+				.AutoHeight()
 				.Padding(0.0f, 0.0f, 0.0f, 24.0f)
 				[
 					MakeButton(TEXT("방 만들기"), FOnClicked::CreateSP(this, &SHeadFrontEnd::OnHostClicked))
@@ -76,7 +86,7 @@ void SHeadFrontEnd::Construct(const FArguments& InArgs)
 				[
 					SAssignNew(AddressBox, SEditableTextBox)
 					.Text(FText::FromString(TEXT("127.0.0.1")))
-					.HintText(FText::FromString(TEXT("호스트 주소")))
+					.HintText(FText::FromString(TEXT("호스트 주소 (예: 123.45.67.89)")))
 					.Font(FCoreStyle::GetDefaultFontStyle("Regular", 16))
 				]
 
@@ -90,8 +100,18 @@ void SHeadFrontEnd::Construct(const FArguments& InArgs)
 	];
 }
 
+void SHeadFrontEnd::ApplyNickname()
+{
+	if (UHeadGameInstance* GI = GameInstance.Get())
+	{
+		GI->SetNickname(NameBox->GetText().ToString());
+	}
+}
+
 FReply SHeadFrontEnd::OnHostClicked()
 {
+	ApplyNickname();
+
 	if (UHeadGameInstance* GI = GameInstance.Get())
 	{
 		GI->HostRoom();
@@ -102,6 +122,8 @@ FReply SHeadFrontEnd::OnHostClicked()
 
 FReply SHeadFrontEnd::OnJoinClicked()
 {
+	ApplyNickname();
+
 	UHeadGameInstance* GI = GameInstance.Get();
 	const FString Address = AddressBox->GetText().ToString().TrimStartAndEnd();
 
