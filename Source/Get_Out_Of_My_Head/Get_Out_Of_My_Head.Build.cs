@@ -28,6 +28,7 @@ public class Get_Out_Of_My_Head : ModuleRules
 		PublicIncludePaths.AddRange(new string[] {
 			"Get_Out_Of_My_Head",
 			"Get_Out_Of_My_Head/Head",
+			"Get_Out_Of_My_Head/Head/Rules",
 			"Get_Out_Of_My_Head/Variant_Platforming",
 			"Get_Out_Of_My_Head/Variant_Platforming/Animation",
 			"Get_Out_Of_My_Head/Variant_Combat",

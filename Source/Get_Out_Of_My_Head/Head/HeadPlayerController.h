@@ -85,12 +85,16 @@ protected:
 	virtual void PlayerTick(float DeltaTime) override;
 
 	UFUNCTION(Server, Reliable)
-	void ServerInteract();
+	void ServerInteractPressed();
+
+	UFUNCTION(Server, Reliable)
+	void ServerInteractReleased();
 
 	UFUNCTION(Server, Reliable)
 	void ServerHostAction();
 
-	void OnInteract();
+	void OnInteractPressed();
+	void OnInteractReleased();
 	void OnHostAction();
 	void OnLeave();
 };

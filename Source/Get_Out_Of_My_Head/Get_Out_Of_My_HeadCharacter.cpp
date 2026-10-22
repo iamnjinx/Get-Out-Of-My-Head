@@ -11,6 +11,7 @@
 #include "EnhancedInputSubsystems.h"
 #include "InputActionValue.h"
 #include "Net/UnrealNetwork.h"
+#include "HeadBodyComponent.h"
 #include "Get_Out_Of_My_Head.h"
 
 AGet_Out_Of_My_HeadCharacter::AGet_Out_Of_My_HeadCharacter()
@@ -49,6 +50,9 @@ AGet_Out_Of_My_HeadCharacter::AGet_Out_Of_My_HeadCharacter()
 	FollowCamera = CreateDefaultSubobject<UCameraComponent>(TEXT("FollowCamera"));
 	FollowCamera->SetupAttachment(CameraBoom, USpringArmComponent::SocketName);
 	FollowCamera->bUsePawnControlRotation = false;
+
+	// statuses, hand and falling of the shared body
+	CreateDefaultSubobject<UHeadBodyComponent>(TEXT("HeadBody"));
 
 	// Note: The skeletal mesh and anim blueprint references on the Mesh component (inherited from Character) 
 	// are set in the derived blueprint asset named ThirdPersonCharacter (to avoid direct content references in C++)

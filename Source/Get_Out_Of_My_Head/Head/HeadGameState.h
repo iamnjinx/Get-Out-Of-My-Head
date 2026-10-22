@@ -7,6 +7,20 @@
 
 class AHeadPlayerState;
 class AGet_Out_Of_My_HeadCharacter;
+class UHeadWorldVariableData;
+
+/** Current value of a world variable */
+USTRUCT()
+struct FHeadVariableValue
+{
+	GENERATED_BODY()
+
+	UPROPERTY()
+	TObjectPtr<UHeadWorldVariableData> Variable;
+
+	UPROPERTY()
+	int32 Value = 0;
+};
 
 /**
  *  Public round state, visible to everyone
@@ -55,7 +69,20 @@ public:
 	UPROPERTY(Replicated, BlueprintReadOnly, Category="Head")
 	TObjectPtr<AGet_Out_Of_My_HeadCharacter> Body;
 
+	/** House-wide values, public to everyone (방 온도) */
+	UPROPERTY(Replicated)
+	TArray<FHeadVariableValue> WorldVariables;
+
 	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
+
+	/** Returns the variable's value, or its initial value if it is not tracked */
+	int32 GetVariable(const UHeadWorldVariableData* Variable) const;
+
+	/** Server: changes a variable */
+	void AddVariable(UHeadWorldVariableData* Variable, int32 Delta);
+
+	/** Server: puts every variable back to its initial value */
+	void ResetVariables(const TArray<TObjectPtr<UHeadWorldVariableData>>& Variables);
 
 	/** Shows a notice line on every client */
 	UFUNCTION(NetMulticast, Reliable)

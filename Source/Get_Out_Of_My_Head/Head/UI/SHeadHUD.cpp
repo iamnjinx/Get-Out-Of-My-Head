@@ -3,6 +3,9 @@
 #include "HeadGameState.h"
 #include "HeadPlayerState.h"
 #include "MissionButton.h"
+#include "HeadDataAssets.h"
+#include "HeadBodyComponent.h"
+#include "Get_Out_Of_My_HeadCharacter.h"
 #include "Styling/CoreStyle.h"
 #include "Widgets/SOverlay.h"
 #include "Widgets/Text/STextBlock.h"
@@ -112,6 +115,16 @@ FText SHeadHUD::GetPublicText() const
 	{
 		Lines.Add(FString::Printf(TEXT("판 남은 시간  %s"), *FormatTime(GS->GetSecondsUntil(GS->RoundEndTime))));
 
+		// world variables are public
+		for (const FHeadVariableValue& Entry : GS->WorldVariables)
+		{
+			if (Entry.Variable)
+			{
+				Lines.Add(FString::Printf(TEXT("%s  %d%s"), *Entry.Variable->DisplayName.ToString(), Entry.Value, *Entry.Variable->Unit.ToString()));
+			}
+		}
+
+
 		if (GS->Phase == EHeadPhase::Playing)
 		{
 			Lines.Add(FString::Printf(TEXT("턴 남은 시간  %s"), *FormatTime(GS->GetSecondsUntil(GS->PhaseEndTime))));
@@ -155,7 +168,34 @@ FText SHeadHUD::GetStatusText() const
 
 	if (GS->CurrentController.Get() == PC->PlayerState.Get())
 	{
-		return FText::FromString(TEXT("내가 조종 중"));
+		FString Status = TEXT("내가 조종 중");
+
+		// body statuses only reach the controller
+		if (const UHeadBodyComponent* BodyComponent = GS->Body ? GS->Body->FindComponentByClass<UHeadBodyComponent>() : nullptr)
+		{
+			TArray<FString> Names;
+			for (const FHeadStatusInstance& Instance : BodyComponent->GetStatuses())
+			{
+				if (Instance.Status)
+				{
+					Names.Add(Instance.Status->bStackable
+						? FString::Printf(TEXT("%s x%d"), *Instance.Status->DisplayName.ToString(), Instance.Stacks)
+						: Instance.Status->DisplayName.ToString());
+				}
+			}
+
+			if (Names.Num() > 0)
+			{
+				Status += TEXT("\n몸 상태: ") + FString::Join(Names, TEXT(", "));
+			}
+
+			if (BodyComponent->IsFallen())
+			{
+				Status += TEXT("\n넘어짐!");
+			}
+		}
+
+		return FText::FromString(Status);
 	}
 
 	return FText::FromString(FString::Printf(TEXT("%s님이 조종 중"), *NameOf(GS->CurrentController)));
@@ -171,7 +211,8 @@ FText SHeadHUD::GetPrivateText() const
 	}
 
 	// only replicated to this player
-	return FText::FromString(FString::Printf(TEXT("내 임무\n버튼 %s 누르기"), *AMissionButton::GetLabel(Me->GetMissionButtonIndex())));
+	const FString MissionName = Me->GetMission() ? Me->GetMission()->DisplayName.ToString() : TEXT("-");
+	return FText::FromString(FString::Printf(TEXT("내 임무: %s\n(M1 테스트: 버튼 %s 누르기)"), *MissionName, *AMissionButton::GetLabel(Me->GetMissionButtonIndex())));
 }
 
 FText SHeadHUD::GetCenterText() const
@@ -221,8 +262,9 @@ FText SHeadHUD::GetCenterText() const
 			{
 				if (PS->GetRevealedMissionButtonIndex() != INDEX_NONE)
 				{
-					Lines.Add(FString::Printf(TEXT("%s: 버튼 %s%s"),
+					Lines.Add(FString::Printf(TEXT("%s: %s (버튼 %s)%s"),
 						*NameOf(PS),
+						PS->GetRevealedMission() ? *PS->GetRevealedMission()->DisplayName.ToString() : TEXT("-"),
 						*AMissionButton::GetLabel(PS->GetRevealedMissionButtonIndex()),
 						PS == GS->Winner ? TEXT("  (승리)") : TEXT("")));
 				}
@@ -250,7 +292,7 @@ FText SHeadHUD::GetBottomText() const
 
 	TArray<FString> Lines = PC->GetActiveNotices();
 	Lines.Add(TEXT(""));
-	Lines.Add(TEXT("E: 버튼 누르기   F10: 방 나가기"));
+	Lines.Add(TEXT("E: 사용 (홀드형은 누르고 있기)   F10: 방 나가기"));
 
 	return FText::FromString(FString::Join(Lines, TEXT("\n")));
 }

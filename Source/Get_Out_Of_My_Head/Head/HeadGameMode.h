@@ -10,9 +10,12 @@ class AHeadPlayerState;
 class AHeadPlayerController;
 class AMissionButton;
 class AGet_Out_Of_My_HeadCharacter;
+class AHeadObject;
+class UHeadRuleSet;
+struct FHeadRuleContext;
 
 /**
- *  Server-side round flow (M1)
+ *  Server-side round flow (M1) and object interaction (M2)
  *  One shared body is possessed by the next player every turn.
  *  Lobby -> Playing <-> Handover -> Results -> Lobby
  *  In standalone (front end) it does nothing and the controller shows the menu instead.
@@ -35,6 +38,14 @@ protected:
 	/** Number of dummy mission buttons. Buttons nobody owns are decoys */
 	UPROPERTY(EditDefaultsOnly, Config, Category="Head|Mission")
 	int32 NumMissionButtons = 4;
+
+	/** Variables, missions and object layout of a round */
+	UPROPERTY(EditDefaultsOnly, Config, Category="Head|Rules")
+	TSoftObjectPtr<UHeadRuleSet> RuleSetAsset;
+
+	/** Max distance from the body to an object's edge to use it */
+	UPROPERTY(EditDefaultsOnly, Config, Category="Head|Rules")
+	float ObjectInteractRange = 150.0f;
 
 	/** Distance from the body ring the buttons are placed on */
 	UPROPERTY(EditDefaultsOnly, Config, Category="Head|Mission")
@@ -72,6 +83,17 @@ protected:
 	UPROPERTY()
 	TArray<TObjectPtr<AMissionButton>> MissionButtons;
 
+	UPROPERTY()
+	TObjectPtr<UHeadRuleSet> RuleSet;
+
+	/** Every object in the house */
+	UPROPERTY()
+	TArray<TObjectPtr<AHeadObject>> Objects;
+
+	/** Object being held with E, locked when E was pressed */
+	UPROPERTY()
+	TObjectPtr<AHeadObject> HoldTarget;
+
 	/** Where the body returns to between rounds */
 	FTransform BodyStartTransform;
 
@@ -102,8 +124,11 @@ public:
 	/** Host pressed the room action key: start in the lobby, back to lobby on results */
 	void HandleHostAction(AHeadPlayerController* PC);
 
-	/** Controller pressed interact */
-	void HandleInteract(AHeadPlayerController* PC);
+	/** Controller pressed E */
+	void HandleInteractPressed(AHeadPlayerController* PC);
+
+	/** Controller released E */
+	void HandleInteractReleased(AHeadPlayerController* PC);
 
 protected:
 
@@ -114,6 +139,29 @@ protected:
 
 	void SpawnBody();
 	void SpawnMissionButtons();
+	void SpawnObjects();
+
+	/** Objects, variables and body statuses back to the start of a round */
+	void ResetWorld();
+
+	/** Presses the closest mission button in reach. Returns false if none */
+	bool TryPressMissionButton(AHeadPlayerController* PC);
+
+	/** Closest usable object in reach of the body, measured to its edge */
+	AHeadObject* FindObjectInReach() const;
+
+	bool IsInReach(const AHeadObject* Object, float ExtraRange = 0.0f) const;
+
+	FHeadRuleContext MakeContext(AHeadObject* Self) const;
+
+	/** Advances the hold, checks breaks and completes it */
+	void UpdateHold(float DeltaSeconds);
+
+	/** Stops the hold. Reset mode objects lose their progress */
+	void CancelHold();
+
+	/** Body fell: break the hold */
+	void HandleBodyFell();
 
 	void StartRound();
 	void BeginTurn(int32 TurnIndex);

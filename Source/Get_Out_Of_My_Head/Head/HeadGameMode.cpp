@@ -3,6 +3,10 @@
 #include "HeadPlayerState.h"
 #include "HeadPlayerController.h"
 #include "MissionButton.h"
+#include "HeadObject.h"
+#include "HeadDataAssets.h"
+#include "HeadRules.h"
+#include "HeadBodyComponent.h"
 #include "Get_Out_Of_My_HeadCharacter.h"
 #include "Get_Out_Of_My_Head.h"
 #include "GameFramework/CharacterMovementComponent.h"
@@ -24,6 +28,8 @@ AHeadGameMode::AHeadGameMode()
 
 	MissionButtonClass = AMissionButton::StaticClass();
 
+	RuleSetAsset = TSoftObjectPtr<UHeadRuleSet>(FSoftObjectPath(TEXT("/Game/Head/Data/DA_RuleSet.DA_RuleSet")));
+
 	static ConstructorHelpers::FClassFinder<AGet_Out_Of_My_HeadCharacter> BodyClassFinder(TEXT("/Game/ThirdPerson/Blueprints/BP_ThirdPersonCharacter"));
 	BodyClass = BodyClassFinder.Class;
 }
@@ -39,8 +45,21 @@ void AHeadGameMode::StartPlay()
 		return;
 	}
 
+	RuleSet = RuleSetAsset.LoadSynchronous();
+	if (!RuleSet)
+	{
+		UE_LOG(LogGet_Out_Of_My_Head, Warning, TEXT("AHeadGameMode could not load the rule set %s. No objects, variables or missions."), *RuleSetAsset.ToString());
+	}
+
 	SpawnBody();
 	SpawnMissionButtons();
+	SpawnObjects();
+	ResetWorld();
+
+	if (UHeadBodyComponent* BodyComponent = Body ? Body->FindComponentByClass<UHeadBodyComponent>() : nullptr)
+	{
+		BodyComponent->OnFell.AddUObject(this, &AHeadGameMode::HandleBodyFell);
+	}
 
 	GetHeadGameState()->Phase = EHeadPhase::Lobby;
 }
@@ -49,7 +68,14 @@ void AHeadGameMode::Tick(float DeltaSeconds)
 {
 	Super::Tick(DeltaSeconds);
 
-	if (bFrontEnd || !IsRoundRunning())
+	if (bFrontEnd)
+	{
+		return;
+	}
+
+	UpdateHold(DeltaSeconds);
+
+	if (!IsRoundRunning())
 	{
 		return;
 	}
@@ -163,14 +189,63 @@ void AHeadGameMode::HandleHostAction(AHeadPlayerController* PC)
 	}
 }
 
-void AHeadGameMode::HandleInteract(AHeadPlayerController* PC)
+void AHeadGameMode::HandleInteractPressed(AHeadPlayerController* PC)
 {
 	AHeadGameState* GS = GetHeadGameState();
 
-	if (bFrontEnd || GS->Phase != EHeadPhase::Playing || !Body || Body->GetController() != PC)
+	if (bFrontEnd || GS->Phase != EHeadPhase::Playing || !Body || Body->GetController() != PC || HoldTarget)
 	{
 		return;
 	}
+
+	const UHeadBodyComponent* BodyComponent = Body->FindComponentByClass<UHeadBodyComponent>();
+	if (BodyComponent && BodyComponent->IsFallen())
+	{
+		return;
+	}
+
+	AHeadObject* Target = FindObjectInReach();
+	if (!Target)
+	{
+		if (!TryPressMissionButton(PC))
+		{
+			PC->ClientNotice(TEXT("가까이에 쓸 수 있는 것이 없습니다."));
+		}
+		return;
+	}
+
+	// conditions are checked when starting, and again when a hold finishes
+	FText FailText;
+	const FHeadRuleContext Context = MakeContext(Target);
+	if (!HeadRules::CheckConditions(Context, Target->GetObjectData()->Conditions, FailText))
+	{
+		// only the controller sees why
+		PC->ClientNotice(FailText.ToString());
+		return;
+	}
+
+	if (Target->GetObjectData()->IsHoldMode())
+	{
+		// the target is locked until the hold ends
+		HoldTarget = Target;
+	}
+	else
+	{
+		Target->CompleteInteraction(Context);
+	}
+}
+
+void AHeadGameMode::HandleInteractReleased(AHeadPlayerController* PC)
+{
+	if (HoldTarget && Body && Body->GetController() == PC)
+	{
+		CancelHold();
+	}
+}
+
+bool AHeadGameMode::TryPressMissionButton(AHeadPlayerController* PC)
+{
+	AHeadGameState* GS = GetHeadGameState();
 
 	// find the closest button in reach
 	AMissionButton* Closest = nullptr;
@@ -188,8 +263,7 @@ void AHeadGameMode::HandleInteract(AHeadPlayerController* PC)
 
 	if (!Closest)
 	{
-		PC->ClientNotice(TEXT("가까이에 누를 버튼이 없습니다."));
-		return;
+		return false;
 	}
 
 	Closest->MulticastPress();
@@ -200,11 +274,13 @@ void AHeadGameMode::HandleInteract(AHeadPlayerController* PC)
 		if (PS && PS->GetMissionButtonIndex() == Closest->GetButtonIndex())
 		{
 			EndRound(EHeadEndReason::MissionComplete, PS);
-			return;
+			return true;
 		}
 	}
 
 	PC->ClientNotice(FString::Printf(TEXT("버튼 %s: 아무 일도 일어나지 않았다."), *AMissionButton::GetLabel(Closest->GetButtonIndex())));
+
+	return true;
 }
 
 AHeadGameState* AHeadGameMode::GetHeadGameState() const
@@ -306,12 +382,31 @@ void AHeadGameMode::StartRound()
 		ButtonIndices.Swap(Index, FMath::RandRange(0, Index));
 	}
 
-	for (int32 Index = 0; Index < Players.Num(); ++Index)
+	// mission pool, handed out again when there are more players than missions
+	TArray<UHeadMissionData*> MissionPool;
+	if (RuleSet)
 	{
-		Players[Index]->SetMission(ButtonIndices[Index]);
+		for (UHeadMissionData* Mission : RuleSet->Missions)
+		{
+			if (Mission)
+			{
+				MissionPool.Add(Mission);
+			}
+		}
 	}
 
-	ResetBody();
+	for (int32 Index = MissionPool.Num() - 1; Index > 0; --Index)
+	{
+		MissionPool.Swap(Index, FMath::RandRange(0, Index));
+	}
+
+	for (int32 Index = 0; Index < Players.Num(); ++Index)
+	{
+		UHeadMissionData* Mission = MissionPool.Num() > 0 ? MissionPool[Index % MissionPool.Num()] : nullptr;
+		Players[Index]->SetMission(Mission, ButtonIndices[Index]);
+	}
+
+	ResetWorld();
 
 	GS->EndReason = EHeadEndReason::None;
 	GS->Winner = nullptr;
@@ -478,6 +573,9 @@ void AHeadGameMode::ResetBody()
 
 void AHeadGameMode::ReleaseBody()
 {
+	// a turn ending breaks the hold
+	CancelHold();
+
 	if (!Body)
 	{
 		return;
@@ -496,4 +594,175 @@ bool AHeadGameMode::IsRoundRunning() const
 {
 	const AHeadGameState* GS = GetHeadGameState();
 	return GS && (GS->Phase == EHeadPhase::Playing || GS->Phase == EHeadPhase::Handover);
+}
+
+void AHeadGameMode::SpawnObjects()
+{
+	if (!RuleSet)
+	{
+		return;
+	}
+
+	FCollisionQueryParams QueryParams;
+	QueryParams.AddIgnoredActor(Body);
+
+	for (const FHeadObjectPlacement& Placement : RuleSet->Placements)
+	{
+		if (!Placement.Object)
+		{
+			continue;
+		}
+
+		FVector Location = BodyStartTransform.GetLocation() + Placement.Offset;
+
+		// drop the object onto the floor
+		FHitResult Hit;
+		if (GetWorld()->LineTraceSingleByChannel(Hit, Location + FVector(0.0f, 0.0f, 300.0f), Location - FVector(0.0f, 0.0f, 1000.0f), ECC_Visibility, QueryParams))
+		{
+			Location = Hit.ImpactPoint;
+		}
+
+		FActorSpawnParameters SpawnParams;
+		SpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+
+		AHeadObject* Object = GetWorld()->SpawnActor<AHeadObject>(AHeadObject::StaticClass(), Location, FRotator::ZeroRotator, SpawnParams);
+		Object->InitObject(Placement.Object);
+		Objects.Add(Object);
+	}
+}
+
+void AHeadGameMode::ResetWorld()
+{
+	ResetBody();
+
+	if (UHeadBodyComponent* BodyComponent = Body ? Body->FindComponentByClass<UHeadBodyComponent>() : nullptr)
+	{
+		BodyComponent->ResetBody();
+		BodyComponent->SetHeldObject(nullptr);
+	}
+
+	for (AHeadObject* Object : Objects)
+	{
+		Object->ResetToInitial();
+	}
+
+	GetHeadGameState()->ResetVariables(RuleSet ? RuleSet->WorldVariables : TArray<TObjectPtr<UHeadWorldVariableData>>());
+}
+
+AHeadObject* AHeadGameMode::FindObjectInReach() const
+{
+	AHeadObject* Closest = nullptr;
+	float ClosestDistance = TNumericLimits<float>::Max();
+
+	for (AHeadObject* Object : Objects)
+	{
+		if (!Object->CanBeUsed() || !IsInReach(Object))
+		{
+			continue;
+		}
+
+		const float Distance = FVector::Dist(Body->GetActorLocation(), Object->GetActorLocation());
+		if (Distance < ClosestDistance)
+		{
+			Closest = Object;
+			ClosestDistance = Distance;
+		}
+	}
+
+	return Closest;
+}
+
+bool AHeadGameMode::IsInReach(const AHeadObject* Object, float ExtraRange) const
+{
+	if (!Body || !Object)
+	{
+		return false;
+	}
+
+	// measured to the object's edge, so a big bed is reachable from its side
+	const FBox Bounds = Object->GetComponentsBoundingBox();
+	FVector Point = Body->GetActorLocation();
+	Point.Z = FMath::Clamp(Point.Z, Bounds.Min.Z, Bounds.Max.Z);
+
+	return FMath::Sqrt(Bounds.ComputeSquaredDistanceToPoint(Point)) <= ObjectInteractRange + ExtraRange;
+}
+
+FHeadRuleContext AHeadGameMode::MakeContext(AHeadObject* Self) const
+{
+	FHeadRuleContext Context;
+	Context.World = GetWorld();
+	Context.GameState = GetHeadGameState();
+	Context.Body = Body;
+	Context.Self = Self;
+	return Context;
+}
+
+void AHeadGameMode::UpdateHold(float DeltaSeconds)
+{
+	if (!HoldTarget)
+	{
+		return;
+	}
+
+	const UHeadBodyComponent* BodyComponent = Body ? Body->FindComponentByClass<UHeadBodyComponent>() : nullptr;
+	AHeadPlayerController* PC = Body ? Cast<AHeadPlayerController>(Body->GetController()) : nullptr;
+
+	// breaks: turn over, nobody in control, fell, out of reach, object gone
+	const bool bValid = GetHeadGameState()->Phase == EHeadPhase::Playing
+		&& PC
+		&& !(BodyComponent && BodyComponent->IsFallen())
+		&& HoldTarget->CanBeUsed()
+		&& IsInReach(HoldTarget, 30.0f);
+
+	if (!bValid)
+	{
+		CancelHold();
+		return;
+	}
+
+	const float HoldSeconds = FMath::Max(HoldTarget->GetObjectData()->HoldSeconds, 0.01f);
+	HoldTarget->SetProgress(HoldTarget->GetProgress() + DeltaSeconds / HoldSeconds);
+
+	if (HoldTarget->GetProgress() < 1.0f)
+	{
+		return;
+	}
+
+	// conditions are checked again when the hold finishes (shampoo gone mid-shower fails)
+	FText FailText;
+	const FHeadRuleContext Context = MakeContext(HoldTarget);
+	if (HeadRules::CheckConditions(Context, HoldTarget->GetObjectData()->Conditions, FailText))
+	{
+		AHeadObject* Completed = HoldTarget;
+		HoldTarget = nullptr;
+		Completed->CompleteInteraction(Context);
+	}
+	else
+	{
+		PC->ClientNotice(FailText.ToString());
+		CancelHold();
+	}
+}
+
+void AHeadGameMode::CancelHold()
+{
+	if (!HoldTarget)
+	{
+		return;
+	}
+
+	// keep mode leaves the progress for the next player
+	if (HoldTarget->GetObjectData()->Mode == EHeadInteractMode::HoldReset)
+	{
+		HoldTarget->SetProgress(0.0f);
+	}
+
+	HoldTarget = nullptr;
+}
+
+void AHeadGameMode::HandleBodyFell()
+{
+	CancelHold();
+
+	GetHeadGameState()->MulticastNotice(TEXT("몸이 넘어졌다!"));
 }

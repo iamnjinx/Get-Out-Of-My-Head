@@ -154,7 +154,8 @@ void AHeadPlayerController::SetupInputComponent()
 
 	if (UEnhancedInputComponent* EnhancedInputComponent = Cast<UEnhancedInputComponent>(InputComponent))
 	{
-		EnhancedInputComponent->BindAction(InteractAction, ETriggerEvent::Started, this, &AHeadPlayerController::OnInteract);
+		EnhancedInputComponent->BindAction(InteractAction, ETriggerEvent::Started, this, &AHeadPlayerController::OnInteractPressed);
+		EnhancedInputComponent->BindAction(InteractAction, ETriggerEvent::Completed, this, &AHeadPlayerController::OnInteractReleased);
 		EnhancedInputComponent->BindAction(HostAction, ETriggerEvent::Started, this, &AHeadPlayerController::OnHostAction);
 		EnhancedInputComponent->BindAction(LeaveAction, ETriggerEvent::Started, this, &AHeadPlayerController::OnLeave);
 	}
@@ -175,11 +176,19 @@ void AHeadPlayerController::PlayerTick(float DeltaTime)
 	Notices.RemoveAll([Now](const FHeadNotice& Notice) { return Notice.ExpireTime <= Now; });
 }
 
-void AHeadPlayerController::ServerInteract_Implementation()
+void AHeadPlayerController::ServerInteractPressed_Implementation()
 {
 	if (AHeadGameMode* GameMode = GetWorld()->GetAuthGameMode<AHeadGameMode>())
 	{
-		GameMode->HandleInteract(this);
+		GameMode->HandleInteractPressed(this);
+	}
+}
+
+void AHeadPlayerController::ServerInteractReleased_Implementation()
+{
+	if (AHeadGameMode* GameMode = GetWorld()->GetAuthGameMode<AHeadGameMode>())
+	{
+		GameMode->HandleInteractReleased(this);
 	}
 }
 
@@ -191,11 +200,19 @@ void AHeadPlayerController::ServerHostAction_Implementation()
 	}
 }
 
-void AHeadPlayerController::OnInteract()
+void AHeadPlayerController::OnInteractPressed()
 {
 	if (!IsFrontEnd())
 	{
-		ServerInteract();
+		ServerInteractPressed();
+	}
+}
+
+void AHeadPlayerController::OnInteractReleased()
+{
+	if (!IsFrontEnd())
+	{
+		ServerInteractReleased();
 	}
 }
 
