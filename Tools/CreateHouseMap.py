@@ -19,7 +19,7 @@ MATERIAL_PATH = "/Game/Head/Materials"
 
 FLOOR_HEIGHT = 300.0
 WALL = 20.0            # wall and slab thickness
-DOOR_WIDTH = 120.0
+DOOR_WIDTH = 150.0     # clear width of a door opening (the body capsule is 84 cm wide)
 
 FLOOR_Z = {"1": 0.0, "2": FLOOR_HEIGHT}
 
@@ -61,7 +61,7 @@ ROOMS = {
 # 1층 rooms with nothing above them get their own roof
 SINGLE_STOREY = ("창고", "차고")
 
-# openings between rooms: (room a, room b, center along the shared edge in m or None for the middle, width in cm).
+# openings between rooms: (room a, room b, center along the shared edge in m or None for the middle, clear width in cm).
 # Shared edges not listed here are solid walls.
 DOORS = [
     # 1층
@@ -202,12 +202,13 @@ def find_door(a, b):
 
 
 def door_gap(span, center, width):
-    """The opening along a shared edge span, kept clear of the walls at both ends."""
+    """The cut in a shared edge span for an opening of the given clear width.
+
+    Wall boxes reach WALL / 2 past both ends of their span, so the cut is WALL wider than the clear opening."""
     a, b = span
-    lo, hi = a + WALL / 2, b - WALL / 2
-    width = min(width, hi - lo)
+    width = min(width + WALL, b - a)
     center = (a + b) / 2 if center is None else center * 100.0
-    center = min(max(center, lo + width / 2), hi - width / 2)
+    center = min(max(center, a + width / 2), b - width / 2)
     return (center - width / 2, center + width / 2)
 
 
@@ -301,6 +302,8 @@ for name, (floor, (x0, y0, x1, y1)) in ROOMS.items():
     light.set_folder_path(f"House/{floor}F/Lights")
     light.point_light_component.set_intensity(40.0)
     light.point_light_component.set_attenuation_radius(900.0)
+    # 19 overlapping shadowed point lights overflow virtual shadow maps and video memory; only the sun casts shadows
+    light.point_light_component.set_cast_shadows(False)
 
 # '방' zone for the AC remote
 zone_floor, (zx0, zy0, zx1, zy1) = ROOMS["내 방"]
