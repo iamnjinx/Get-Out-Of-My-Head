@@ -87,7 +87,7 @@ FALL_ASLEEP = mission("DA_Mission_FallAsleep", "잠에 들기", 1,
 POWER_OUTAGE = mission("DA_Mission_PowerOutage", "정전", 2,
                        "침실 불, 거실 불, 에어컨 리모컨을 모두 켜기. 리모컨은 '방' 안에서만 켜진다")
 PLAYING_HOUSE = mission("DA_Mission_PlayingHouse", "소꿉놀이 하기", 7,
-                        "거실 테이블에 인형 4개(A~D)와 다도 세트를 올려 두기. 인형D는 지하 창고에 있다")
+                        "거실 테이블에 인형 4개(A~D)와 다도 세트를 올려 두기. 인형D는 1층 창고에 있다")
 HATCH_EGG = mission("DA_Mission_HatchEgg", "수상한 알 부화시키기", 8,
                     "바구니에 알·수건을 넣어 2층 책상에 올리고, 방 온도 36도 15초 → 38도 15초 유지")
 
@@ -186,7 +186,7 @@ TOOTHBRUSH = obj("DA_Obj_Toothbrush", "칫솔", CYLINDER, (0.05, 0.05, 0.25), (0
                  mode=HOLD_RESET, hold_seconds=5.0, carryable=True, effects=[add_status(TEETH)])
 
 # 2층 안방
-BASEMENT_KEY = obj("DA_Obj_BasementKey", "지하실 열쇠", CUBE, (0.1, 0.05, 0.05), (0.85, 0.75, 0.2),
+BASEMENT_KEY = obj("DA_Obj_BasementKey", "창고 열쇠", CUBE, (0.1, 0.05, 0.05), (0.85, 0.75, 0.2),
                    carryable=True, no_interact=True)
 
 # 1층 부엌
@@ -222,10 +222,10 @@ DESK = obj("DA_Obj_Desk", "책상", CUBE, (0.8, 1.4, 0.75), (0.55, 0.4, 0.3),
                condition(C.ATTACHED, "바구니에 수상한 알이 없다", target=ITEM, object=EGG),
                condition(C.ATTACHED, "바구니에 수건이 없다", target=ITEM, object=TOWEL)])])
 
-# 1층 현관 ↔ 지하 입구
-BASEMENT_DOOR = obj("DA_Obj_BasementDoor", "지하실 문", CUBE, (0.15, 1.25, 2.2), (0.45, 0.3, 0.2),
+# 1층 차고 ↔ 창고
+BASEMENT_DOOR = obj("DA_Obj_BasementDoor", "창고 문", CUBE, (0.15, 1.25, 2.2), (0.45, 0.3, 0.2),
                     door=True, toggle=True, large_furniture=True, initially_on=False,
-                    conditions=[condition(C.HOLDING, "지하실 열쇠가 필요하다", object=BASEMENT_KEY)])
+                    conditions=[condition(C.HOLDING, "창고 열쇠가 필요하다", object=BASEMENT_KEY)])
 
 # --- mission rules --------------------------------------------------------
 

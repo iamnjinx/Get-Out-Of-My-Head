@@ -286,7 +286,7 @@ namespace
 		return Object && Object->GetObjectData() ? Object->GetObjectData()->DisplayName.ToString() : FString();
 	}
 
-	/** "수건 사용", "침실 불 스위치 켜기", "지하실 문 열기"... empty when E does nothing */
+	/** "수건 사용", "침실 불 스위치 켜기", "창고 문 열기"... empty when E does nothing */
 	FString UseText(const AHeadObject* Object)
 	{
 		if (!Object || !Object->CanBeUsed())
