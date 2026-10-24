@@ -75,7 +75,7 @@ DOORS = [
     ("중앙 복도", "거실", 9.5, 200.0),
     ("중앙 복도", "현관", 14.5, DOOR_WIDTH),
     ("중앙 복도", "작업실", 18.0, DOOR_WIDTH),
-    ("중앙 복도", "1층 계단", 20.55, 90.0),    # onto the walkway beside the stairs
+    ("작업실", "1층 계단", 11.3, 110.0),       # onto the landing at the foot of the stairs
     ("거실", "현관", 9.5, DOOR_WIDTH),
     ("현관", "작업실", 9.8, DOOR_WIDTH),
     ("현관", "앞마당", 14.5, DOOR_WIDTH),
@@ -87,15 +87,15 @@ DOORS = [
     ("2층 복도", "계단참", 6.0, DOOR_WIDTH),
     ("내 방", "2층 복도", 9.5, DOOR_WIDTH),
     ("빈방", "2층 복도", 16.5, DOOR_WIDTH),
-    ("계단참", "2층 계단", 21.45, 90.0),       # off the top of the stairs
+    ("계단참", "2층 계단", None, DOOR_WIDTH),  # off the top of the stairs
 ]
 
 # the locked door (창고 열쇠) fills the opening between these two rooms
 LOCKED_DOOR = ("차고", "창고")
 
-# stairs: 1층 계단 → 2층 계단. The stairwell is 2m wide: a 90cm walkway runs south along its west half from the
-# 복도 door, the stairs climb north along the east half and end at the door to 계단참.
-STAIRS = (2100.0, 740.0, 2190.0, 1190.0)
+# stairs: 1층 계단 → 2층 계단, one straight flight over the stairwell's full width. A 1.2m landing at the south end
+# opens to 작업실, the stairs climb north from it and end at the door to 계단참.
+STAIRS = (2010.0, 720.0, 2190.0, 1070.0)
 STEPS = 12
 
 HOLES = {
@@ -320,7 +320,7 @@ OBJECTS = [
     ("DA_Obj_Bed", "내 방", 0.3, 0.75, 0),
     ("DA_Obj_BedroomLightSwitch", "내 방", 0.92, 0.08, 90),
     ("DA_Obj_ACRemote", "내 방", 0.6, 0.45, 0),
-    ("DA_Obj_Desk", "내 방", 0.78, 0.85, 0),
+    ("DA_Obj_Desk", "내 방", 0.78, 0.82, 0),
     ("DA_Obj_ThermostatUp", "내 방", 0.06, 0.4, 90),
     ("DA_Obj_ThermostatDown", "내 방", 0.06, 0.55, 90),
     ("DA_Obj_DollB", "내 방", 0.5, 0.25, 0),
